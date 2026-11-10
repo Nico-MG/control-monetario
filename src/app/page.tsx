@@ -41,7 +41,8 @@ async function HomeContent({ searchParams }: HomeProps) {
     return <SetupPanel />;
   }
 
-  const supabase = await createServerSupabaseClient();
+  await connection();
+  const supabase = await createServerSupabaseClient({ allowCookieWrites: false });
   const {
     data: { user },
   } = await supabase.auth.getUser();
@@ -50,7 +51,6 @@ async function HomeContent({ searchParams }: HomeProps) {
     return <AuthPanel error={params.error} notice={params.notice} />;
   }
 
-  await connection();
   const month = isMonth(params.month) ? params.month : new Date().toISOString().slice(0, 7);
   const monthStart = `${month}-01`;
   const [year, monthNumber] = month.split("-").map(Number);

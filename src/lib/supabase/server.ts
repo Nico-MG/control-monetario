@@ -9,7 +9,9 @@ export function isSupabaseConfigured() {
   );
 }
 
-export async function createServerSupabaseClient() {
+export async function createServerSupabaseClient({
+  allowCookieWrites = true,
+}: { allowCookieWrites?: boolean } = {}) {
   const url = process.env.NEXT_PUBLIC_SUPABASE_URL;
   const key = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY;
 
@@ -25,6 +27,10 @@ export async function createServerSupabaseClient() {
         return cookieStore.getAll();
       },
       setAll(cookiesToSet) {
+        if (!allowCookieWrites) {
+          return;
+        }
+
         for (const { name, value, options } of cookiesToSet) {
           cookieStore.set(name, value, options);
         }
