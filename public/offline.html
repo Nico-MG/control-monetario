@@ -1,0 +1,64 @@
+<!doctype html>
+<html lang="es">
+  <head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <meta name="theme-color" content="#2f6d4f">
+    <title>Sin conexión · Control Monetario</title>
+    <style>
+      * { box-sizing: border-box; }
+      body {
+        display: grid;
+        min-height: 100vh;
+        margin: 0;
+        place-items: center;
+        background: #f6f7f3;
+        color: #1d2b24;
+        font-family: Arial, Helvetica, sans-serif;
+        padding: 24px;
+      }
+      main {
+        width: min(100%, 440px);
+        border: 1px solid #e8ebe5;
+        border-radius: 20px;
+        background: #fff;
+        padding: 36px;
+        text-align: center;
+      }
+      .brand-mark {
+        display: grid;
+        width: 48px;
+        height: 48px;
+        margin: 0 auto 22px;
+        place-items: center;
+        border-radius: 15px;
+        background: #2f6d4f;
+        color: #fff;
+        font-family: Georgia, serif;
+        font-size: 25px;
+      }
+      h1 { margin: 0 0 12px; font-size: 24px; }
+      p { color: #78827b; line-height: 1.6; }
+      button {
+        margin-top: 12px;
+        border: 0;
+        border-radius: 10px;
+        background: #2f6d4f;
+        color: #fff;
+        cursor: pointer;
+        font: inherit;
+        font-weight: 700;
+        padding: 12px 18px;
+      }
+      button:hover { background: #214e39; }
+    </style>
+  </head>
+  <body>
+    <main>
+      <div class="brand-mark" aria-hidden="true">C</div>
+      <h1>Estás sin conexión</h1>
+      <p>Conéctate a internet para consultar tus finanzas. Por seguridad, tus datos no se guardan en este dispositivo para usarlos sin conexión.</p>
+      <button type="button" onclick="location.reload()">Volver a intentar</button>
+    </main>
+  </body>
+</html>
