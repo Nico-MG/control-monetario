@@ -20,7 +20,7 @@ Aplicación personal de finanzas hecha con Next.js, Supabase y lista para public
 
 Solo las direcciones añadidas a `allowed_users` pueden crear una cuenta o iniciar sesión; el nombre asociado (de 3 a 60 caracteres, incluyendo espacios y tildes) también se usa para iniciar sesión. La whitelist no es legible desde el navegador y las políticas RLS bloquean a cualquier usuario que no figure en ella. Las cuentas existentes deben añadirse manualmente a la tabla para conservar el acceso.
 
-Las categorías se administran desde la aplicación. La migración de categorías conserva las que ya se usaban en movimientos y presupuestos.
+Las categorías se administran desde la aplicación. La migración de categorías conserva las que ya se usaban en movimientos y presupuestos. Aplica también las migraciones más recientes de `supabase/migrations` para habilitar comentarios e historial de presupuestos, y metas mensuales de ahorro e inversión.
 
 Para habilitar la recuperación por código, configura en Supabase **Authentication → Email Templates → Reset Password** una plantilla que muestre `{{ .Token }}` (código OTP), en lugar de depender solo del enlace de recuperación.
 
@@ -42,8 +42,12 @@ Si no hay conexión, se muestra una página de reintento. Los movimientos, las s
 - Resumen mensual en pesos chilenos, ingresos, gastos y balance.
 - Registro de movimientos con fecha, categoría y comentarios.
 - Presupuestos por categoría con esquema fijo/variable.
+- Comentarios para cada asignación e historial de cambios con fecha y hora.
 - Plantilla optativa de categorías y montos del presupuesto del Excel.
-- Metas de ahorro con objetivo y progreso inicial.
+- Metas mensuales de ahorro e inversión como porcentaje de los ingresos.
+- Gráficos de cumplimiento, comparación de ingresos y presupuesto, y administración de categorías, metas y movimientos.
+- Búsqueda de gastos por palabras en la descripción o el comentario, con totales y desglose por categoría.
+- Navegación móvil por secciones con botones grandes y gestos laterales de página a página.
 - Acceso autenticado y aislamiento de filas mediante Row Level Security.
 
 Los movimientos y metas personales del Excel no se importan automáticamente. La plantilla presupuestaria es una opción explícita disponible desde la app.

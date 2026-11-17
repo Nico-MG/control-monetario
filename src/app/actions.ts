@@ -285,16 +285,79 @@ export async function createTransaction(formData: FormData) {
   redirect(messageUrl("notice", "Movimiento guardado."));
 }
 
+export async function updateTransaction(formData: FormData) {
+  const id = field(formData, "id");
+  const description = field(formData, "description");
+  const category = field(formData, "category");
+  const type = field(formData, "type");
+  const date = field(formData, "date");
+  const amount = requireIntegerAmount(field(formData, "amount"));
+  const month = field(formData, "month");
+
+  if (
+    !id ||
+    !description ||
+    description.length > 120 ||
+    !category ||
+    !amount ||
+    !isDate(date) ||
+    !isMonth(month) ||
+    (type !== "income" && type !== "expense")
+  ) {
+    redirect(messageUrl("error", "Revisa los datos del movimiento e inténtalo de nuevo."));
+  }
+
+  const supabase = await authenticatedClient();
+  await requireCategory(supabase, category);
+  const { error } = await supabase
+    .from("transactions")
+    .update({
+      description,
+      category,
+      type,
+      date,
+      amount,
+      notes: field(formData, "notes") || null,
+    })
+    .eq("id", id);
+
+  if (error) {
+    redirect(messageUrl("error", "No pudimos actualizar el movimiento."));
+  }
+
+  revalidatePath("/");
+  redirect(`/?month=${month}&section=movimientos&notice=${encodeURIComponent("Movimiento actualizado.")}`);
+}
+
+export async function deleteTransaction(formData: FormData) {
+  const id = field(formData, "id");
+  const month = field(formData, "month");
+  if (!id || !isMonth(month)) {
+    redirect(messageUrl("error", "No pudimos identificar el movimiento."));
+  }
+
+  const supabase = await authenticatedClient();
+  const { error } = await supabase.from("transactions").delete().eq("id", id);
+  if (error) {
+    redirect(messageUrl("error", "No pudimos eliminar el movimiento."));
+  }
+
+  revalidatePath("/");
+  redirect(`/?month=${month}&section=movimientos&notice=${encodeURIComponent("Movimiento eliminado.")}`);
+}
+
 export async function createBudget(formData: FormData) {
   const category = field(formData, "category");
   const month = field(formData, "month");
   const scheme = field(formData, "scheme");
   const amount = requireIntegerAmount(field(formData, "amount"), true);
+  const notes = field(formData, "notes");
 
   if (
     !category ||
     !isMonth(month) ||
     amount === null ||
+    notes.length > 500 ||
     (scheme !== "fixed" && scheme !== "variable")
   ) {
     redirect(messageUrl("error", "Revisa los datos del presupuesto."));
@@ -304,7 +367,7 @@ export async function createBudget(formData: FormData) {
   await requireCategory(supabase, category);
 
   const { error } = await supabase.from("budgets").upsert(
-    { category, month: `${month}-01`, amount, scheme },
+    { category, month: `${month}-01`, amount, scheme, notes: notes || null },
     { onConflict: "user_id,month,category" },
   );
 
@@ -313,7 +376,63 @@ export async function createBudget(formData: FormData) {
   }
 
   revalidatePath("/");
-  redirect(`/?month=${month}&notice=${encodeURIComponent("Presupuesto actualizado.")}`);
+  redirect(`/?month=${month}&section=presupuesto&notice=${encodeURIComponent("Presupuesto actualizado.")}`);
+}
+
+export async function updateBudget(formData: FormData) {
+  const id = field(formData, "id");
+  const month = field(formData, "month");
+  const category = field(formData, "category");
+  const amount = requireIntegerAmount(field(formData, "amount"), true);
+  const scheme = field(formData, "scheme");
+  const notes = field(formData, "notes");
+
+  if (
+    !id ||
+    !isMonth(month) ||
+    !category ||
+    amount === null ||
+    notes.length > 500 ||
+    (scheme !== "fixed" && scheme !== "variable")
+  ) {
+    redirect(messageUrl("error", "Revisa los datos del presupuesto."));
+  }
+
+  const supabase = await authenticatedClient();
+  await requireCategory(supabase, category);
+  const { error } = await supabase
+    .from("budgets")
+    .update({ category, amount, scheme, notes: notes || null })
+    .eq("id", id)
+    .eq("month", `${month}-01`);
+
+  if (error) {
+    redirect(messageUrl("error", "No pudimos actualizar el presupuesto."));
+  }
+
+  revalidatePath("/");
+  redirect(`/?month=${month}&section=presupuesto&notice=${encodeURIComponent("Presupuesto actualizado.")}`);
+}
+
+export async function deleteBudget(formData: FormData) {
+  const id = field(formData, "id");
+  const month = field(formData, "month");
+  if (!id || !isMonth(month)) {
+    redirect(messageUrl("error", "No pudimos identificar el presupuesto."));
+  }
+
+  const supabase = await authenticatedClient();
+  const { error } = await supabase
+    .from("budgets")
+    .delete()
+    .eq("id", id)
+    .eq("month", `${month}-01`);
+  if (error) {
+    redirect(messageUrl("error", "No pudimos eliminar el presupuesto."));
+  }
+
+  revalidatePath("/");
+  redirect(`/?month=${month}&section=presupuesto&notice=${encodeURIComponent("Presupuesto eliminado.")}`);
 }
 
 export async function createExcelTemplateBudgets(formData: FormData) {
@@ -382,7 +501,7 @@ export async function createExcelTemplateBudgets(formData: FormData) {
   }
 
   revalidatePath("/");
-  redirect(`/?month=${month}&notice=${encodeURIComponent("Plantilla del Excel agregada al mes.")}`);
+  redirect(`/?month=${month}&section=presupuesto&notice=${encodeURIComponent("Plantilla del Excel agregada al mes.")}`);
 }
 
 export async function createCategory(formData: FormData) {
@@ -403,7 +522,55 @@ export async function createCategory(formData: FormData) {
   }
 
   revalidatePath("/");
-  redirect(messageUrl("notice", "Categoría creada."));
+  redirect("/?section=administrar&notice=Categor%C3%ADa%20creada.");
+}
+
+export async function updateCategory(formData: FormData) {
+  const id = field(formData, "id");
+  const name = field(formData, "name");
+  if (!id || !name || name.length > 60) {
+    redirect(messageUrl("error", "Ingresa un nombre de categoría de hasta 60 caracteres."));
+  }
+
+  const supabase = await authenticatedClient();
+  const { error } = await supabase.from("categories").update({ name }).eq("id", id);
+  if (error?.code === "23505") {
+    redirect(messageUrl("error", "Ya existe una categoría con ese nombre."));
+  }
+  if (error) {
+    redirect(messageUrl("error", "No pudimos actualizar la categoría."));
+  }
+
+  revalidatePath("/");
+  redirect("/?section=administrar&notice=Categor%C3%ADa%20actualizada.");
+}
+
+export async function deleteCategory(formData: FormData) {
+  const id = field(formData, "id");
+  const name = field(formData, "name");
+  if (!id || !name) {
+    redirect(messageUrl("error", "No pudimos identificar la categoría."));
+  }
+
+  const supabase = await authenticatedClient();
+  const [budgets, transactions] = await Promise.all([
+    supabase.from("budgets").select("id").eq("category", name).limit(1),
+    supabase.from("transactions").select("id").eq("category", name).limit(1),
+  ]);
+  if (budgets.error || transactions.error) {
+    redirect(messageUrl("error", "No pudimos validar el uso de la categoría."));
+  }
+  if (budgets.data.length > 0 || transactions.data.length > 0) {
+    redirect(messageUrl("error", "No se puede eliminar una categoría que ya tiene movimientos o presupuestos."));
+  }
+
+  const { error } = await supabase.from("categories").delete().eq("id", id);
+  if (error) {
+    redirect(messageUrl("error", "No pudimos eliminar la categoría."));
+  }
+
+  revalidatePath("/");
+  redirect("/?section=administrar&notice=Categor%C3%ADa%20eliminada.");
 }
 
 export async function createGoal(formData: FormData) {
@@ -435,7 +602,59 @@ export async function createGoal(formData: FormData) {
   }
 
   revalidatePath("/");
-  redirect(messageUrl("notice", "Meta de ahorro creada."));
+  redirect("/?section=administrar&notice=Meta%20de%20ahorro%20creada.");
+}
+
+export async function updateGoal(formData: FormData) {
+  const id = field(formData, "id");
+  const title = field(formData, "title");
+  const targetAmount = requireIntegerAmount(field(formData, "target_amount"));
+  const savedAmount = requireIntegerAmount(field(formData, "saved_amount"), true);
+  const dueDate = field(formData, "due_date");
+
+  if (
+    !id ||
+    !title ||
+    title.length > 100 ||
+    !targetAmount ||
+    savedAmount === null ||
+    (dueDate && !isDate(dueDate))
+  ) {
+    redirect(messageUrl("error", "Revisa los datos de la meta de ahorro."));
+  }
+
+  const supabase = await authenticatedClient();
+  const { error } = await supabase
+    .from("savings_goals")
+    .update({
+      title,
+      target_amount: targetAmount,
+      saved_amount: savedAmount,
+      due_date: dueDate || null,
+    })
+    .eq("id", id);
+  if (error) {
+    redirect(messageUrl("error", "No pudimos actualizar la meta."));
+  }
+
+  revalidatePath("/");
+  redirect("/?section=administrar&notice=Meta%20actualizada.");
+}
+
+export async function deleteGoal(formData: FormData) {
+  const id = field(formData, "id");
+  if (!id) {
+    redirect(messageUrl("error", "No pudimos identificar la meta."));
+  }
+
+  const supabase = await authenticatedClient();
+  const { error } = await supabase.from("savings_goals").delete().eq("id", id);
+  if (error) {
+    redirect(messageUrl("error", "No pudimos eliminar la meta."));
+  }
+
+  revalidatePath("/");
+  redirect("/?section=administrar&notice=Meta%20eliminada.");
 }
 
 export async function updateGoalProgress(formData: FormData) {
@@ -457,5 +676,52 @@ export async function updateGoalProgress(formData: FormData) {
   }
 
   revalidatePath("/");
-  redirect(messageUrl("notice", "Progreso de la meta actualizado."));
+  redirect("/?section=metas&notice=Progreso%20de%20la%20meta%20actualizado.");
+}
+
+export async function saveMonthlyGoal(formData: FormData) {
+  const month = field(formData, "month");
+  const goalType = field(formData, "goal_type");
+  const percentage = Number(field(formData, "percentage"));
+  const savedAmount = requireIntegerAmount(field(formData, "saved_amount") || "0", true);
+
+  if (
+    !isMonth(month) ||
+    (goalType !== "savings" && goalType !== "investment") ||
+    !Number.isInteger(percentage) ||
+    percentage < 1 ||
+    percentage > 100 ||
+    savedAmount === null
+  ) {
+    redirect(messageUrl("error", "Revisa los datos de la meta mensual."));
+  }
+
+  const supabase = await authenticatedClient();
+  const { error } = await supabase.from("monthly_goals").upsert(
+    { month: `${month}-01`, goal_type: goalType, percentage, saved_amount: savedAmount },
+    { onConflict: "user_id,month,goal_type" },
+  );
+  if (error) {
+    redirect(messageUrl("error", "No pudimos guardar la meta mensual."));
+  }
+
+  revalidatePath("/");
+  redirect(`/?month=${month}&section=metas&notice=${encodeURIComponent("Meta mensual guardada.")}`);
+}
+
+export async function deleteMonthlyGoal(formData: FormData) {
+  const id = field(formData, "id");
+  const month = field(formData, "month");
+  if (!id || !isMonth(month)) {
+    redirect(messageUrl("error", "No pudimos identificar la meta mensual."));
+  }
+
+  const supabase = await authenticatedClient();
+  const { error } = await supabase.from("monthly_goals").delete().eq("id", id);
+  if (error) {
+    redirect(messageUrl("error", "No pudimos eliminar la meta mensual."));
+  }
+
+  revalidatePath("/");
+  redirect(`/?month=${month}&section=metas&notice=${encodeURIComponent("Meta mensual eliminada.")}`);
 }
