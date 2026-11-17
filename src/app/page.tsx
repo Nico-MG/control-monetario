@@ -3,10 +3,11 @@ import { connection } from "next/server";
 import { AuthPanel } from "@/components/auth-panel";
 import { Dashboard } from "@/components/dashboard";
 import { SetupPanel } from "@/components/setup-panel";
+import { createAdminSupabaseClient } from "@/lib/supabase/admin";
 import { createServerSupabaseClient, isSupabaseConfigured } from "@/lib/supabase/server";
 
 type HomeProps = {
-  searchParams: Promise<{ error?: string; notice?: string; month?: string }>;
+  searchParams: Promise<{ error?: string; notice?: string; month?: string; reset?: string }>;
 };
 
 export const instant = false;
@@ -47,8 +48,28 @@ async function HomeContent({ searchParams }: HomeProps) {
     data: { user },
   } = await supabase.auth.getUser();
 
-  if (!user) {
-    return <AuthPanel error={params.error} notice={params.notice} />;
+  if (!user?.email) {
+    return <AuthPanel error={params.error} notice={params.notice} resetStep={params.reset === "code"} />;
+  }
+
+  const admin = createAdminSupabaseClient();
+  const { data: allowedUser, error: whitelistError } = await admin
+    .from("allowed_users")
+    .select("username")
+    .eq("email", user.email.toLowerCase())
+    .maybeSingle();
+
+  if (whitelistError) {
+    return (
+      <AuthPanel
+        error="No pudimos validar tu acceso. Revisa la configuración del servidor."
+        notice={params.notice}
+        resetStep={params.reset === "code"}
+      />
+    );
+  }
+  if (!allowedUser) {
+    return <AuthPanel error="Tu correo no está autorizado para acceder." resetStep={params.reset === "code"} />;
   }
 
   const month = isMonth(params.month) ? params.month : new Date().toISOString().slice(0, 7);
@@ -96,7 +117,7 @@ async function HomeContent({ searchParams }: HomeProps) {
 
   return (
     <Dashboard
-      email={user.email ?? ""}
+      username={allowedUser.username}
       month={month}
       today={new Date().toISOString().slice(0, 10)}
       error={params.error}

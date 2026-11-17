@@ -7,13 +7,22 @@ Aplicación personal de finanzas hecha con Next.js, Supabase y lista para public
 1. Instala Node.js 20.9 o superior.
 2. Instala dependencias con `npm install`.
 3. Crea un proyecto en [Supabase](https://supabase.com/dashboard).
-4. Copia `.env.example` a `.env.local` y completa la URL y la clave publicable (`anon`).
+4. Copia `.env.example` a `.env.local` y completa la URL y la clave publicable. En Supabase, ve a **Settings → API Keys → Secret keys**, copia una clave `sb_secret_...` y guárdala como `SUPABASE_SERVICE_ROLE_KEY`.
 5. Ejecuta los archivos de `supabase/migrations` en orden en el SQL Editor de Supabase.
-6. Inicia con `npm run dev`.
+6. Agrega los correos autorizados y sus nombres de usuario en **SQL Editor**. Por ejemplo:
 
-La app permite crear cuenta/iniciar sesión con correo y contraseña. Supabase Auth gestiona las sesiones; las políticas RLS restringen los movimientos, presupuestos y metas al usuario autenticado propietario de cada fila.
+   ```sql
+   insert into public.allowed_users (email, username)
+   values ('persona@ejemplo.com', 'persona');
+   ```
+
+7. Inicia con `npm run dev`.
+
+Solo las direcciones añadidas a `allowed_users` pueden crear una cuenta o iniciar sesión; el nombre asociado (de 3 a 60 caracteres, incluyendo espacios y tildes) también se usa para iniciar sesión. La whitelist no es legible desde el navegador y las políticas RLS bloquean a cualquier usuario que no figure en ella. Las cuentas existentes deben añadirse manualmente a la tabla para conservar el acceso.
 
 Las categorías se administran desde la aplicación. La migración de categorías conserva las que ya se usaban en movimientos y presupuestos.
+
+Para habilitar la recuperación por código, configura en Supabase **Authentication → Email Templates → Reset Password** una plantilla que muestre `{{ .Token }}` (código OTP), en lugar de depender solo del enlace de recuperación.
 
 ## Instalar como aplicación
 
@@ -24,9 +33,9 @@ Si no hay conexión, se muestra una página de reintento. Los movimientos, las s
 ## Despliegue en Vercel
 
 1. Sube este repositorio a GitHub y crea un proyecto nuevo en Vercel importándolo.
-2. En **Settings → Environment Variables**, agrega `NEXT_PUBLIC_SUPABASE_URL` y `NEXT_PUBLIC_SUPABASE_ANON_KEY` para los entornos que vayas a usar.
+2. En **Settings → Environment Variables**, agrega `NEXT_PUBLIC_SUPABASE_URL`, `NEXT_PUBLIC_SUPABASE_ANON_KEY` y `SUPABASE_SERVICE_ROLE_KEY` para los entornos que vayas a usar. La clave de servicio es privada: no debe llevar el prefijo `NEXT_PUBLIC_` ni usarse en el navegador.
 3. En Supabase, aplica la migración y configura **Authentication → URL Configuration** con la URL de producción de Vercel como Site URL y sus URLs de vista previa/local como Redirect URLs si las necesitas.
-4. Despliega desde Vercel. No configures la `service_role` key en el navegador ni en estas variables públicas.
+4. Despliega desde Vercel. No expongas la clave de servicio en el navegador ni la configures con prefijo `NEXT_PUBLIC_`.
 
 ## Funcionalidad inicial
 

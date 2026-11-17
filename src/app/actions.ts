@@ -2,6 +2,7 @@
 
 import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
+import { createAdminSupabaseClient } from "@/lib/supabase/admin";
 import { createServerSupabaseClient } from "@/lib/supabase/server";
 
 function field(formData: FormData, name: string) {
@@ -11,6 +12,10 @@ function field(formData: FormData, name: string) {
 
 function messageUrl(kind: "error" | "notice", message: string) {
   return `/?${kind}=${encodeURIComponent(message)}`;
+}
+
+function passwordResetUrl(kind: "error" | "notice", message: string) {
+  return `/?reset=code&${kind}=${encodeURIComponent(message)}`;
 }
 
 function requireIntegerAmount(value: string, allowZero = false) {
@@ -40,8 +45,22 @@ async function authenticatedClient() {
     error,
   } = await supabase.auth.getUser();
 
-  if (error || !user) {
+  if (error || !user?.email) {
     redirect("/?error=Debes%20iniciar%20sesi%C3%B3n%20para%20continuar.");
+  }
+
+  const admin = createAdminSupabaseClient();
+  const { data: allowedUser, error: whitelistError } = await admin
+    .from("allowed_users")
+    .select("email")
+    .eq("email", user.email.toLowerCase())
+    .maybeSingle();
+
+  if (whitelistError) {
+    redirect(messageUrl("error", "No pudimos validar tu acceso."));
+  }
+  if (!allowedUser) {
+    redirect(messageUrl("error", "Tu correo no está autorizado para acceder."));
   }
 
   return supabase;
@@ -69,39 +88,154 @@ async function requireCategory(supabase: Awaited<ReturnType<typeof authenticated
 }
 
 export async function signIn(formData: FormData) {
-  const email = field(formData, "email");
+  const identifier = field(formData, "identifier").toLowerCase();
   const password = field(formData, "password");
 
-  if (!email || !password) {
-    redirect(messageUrl("error", "Ingresa tu correo y contraseña."));
+  if (!identifier || !password) {
+    redirect(messageUrl("error", "Ingresa tu usuario o correo y contraseña."));
+  }
+
+  const admin = createAdminSupabaseClient();
+  const byUsername = await admin
+    .from("allowed_users")
+    .select("email")
+    .eq("username_key", identifier)
+    .maybeSingle();
+  if (byUsername.error) {
+    redirect(messageUrl("error", "No pudimos validar tu acceso."));
+  }
+
+  const email = byUsername.data?.email ?? identifier;
+  const allowedUser = byUsername.data
+    ? byUsername
+    : await admin.from("allowed_users").select("email").eq("email", email).maybeSingle();
+
+  if (allowedUser.error) {
+    redirect(messageUrl("error", "No pudimos validar tu acceso."));
+  }
+  if (!allowedUser.data) {
+    redirect(messageUrl("error", "El usuario o correo no está autorizado."));
   }
 
   const supabase = await createServerSupabaseClient();
   const { error } = await supabase.auth.signInWithPassword({ email, password });
 
   if (error) {
-    redirect(messageUrl("error", "No pudimos iniciar sesión. Revisa tus datos e inténtalo otra vez."));
+    redirect(messageUrl("error", "No pudimos iniciar sesión. Revisa tus datos o solicita autorización."));
   }
 
   redirect("/");
 }
 
 export async function signUp(formData: FormData) {
-  const email = field(formData, "email");
+  const email = field(formData, "email").toLowerCase();
+  const username = field(formData, "username");
   const password = field(formData, "password");
 
-  if (!email || password.length < 8) {
-    redirect(messageUrl("error", "Ingresa un correo y una contraseña de al menos 8 caracteres."));
+  if (
+    !email ||
+    username.length < 3 ||
+    username.length > 60 ||
+    /[\u0000-\u001f\u007f]/.test(username) ||
+    password.length < 8
+  ) {
+    redirect(messageUrl("error", "Ingresa un correo, un nombre de 3 a 60 caracteres y una contraseña de al menos 8 caracteres."));
+  }
+
+  const admin = createAdminSupabaseClient();
+  const { data: allowedUser, error: whitelistError } = await admin
+    .from("allowed_users")
+    .select("username")
+    .eq("email", email)
+    .maybeSingle();
+
+  if (whitelistError) {
+    redirect(messageUrl("error", "No pudimos validar tu acceso."));
+  }
+  if (!allowedUser || allowedUser.username.toLowerCase() !== username.toLowerCase()) {
+    redirect(messageUrl("error", "El correo o nombre de usuario no coincide con la lista de acceso."));
   }
 
   const supabase = await createServerSupabaseClient();
-  const { error } = await supabase.auth.signUp({ email, password });
+  const { error } = await supabase.auth.signUp({
+    email,
+    password,
+    options: { data: { username } },
+  });
 
   if (error) {
     redirect(messageUrl("error", "No pudimos crear tu cuenta. Verifica los datos o intenta iniciar sesión."));
   }
 
   redirect(messageUrl("notice", "Cuenta creada. Si está activada la confirmación, revisa tu correo."));
+}
+
+export async function requestPasswordReset(formData: FormData) {
+  const email = field(formData, "email").toLowerCase();
+  if (!email) {
+    redirect(messageUrl("error", "Ingresa tu correo electrónico."));
+  }
+
+  const admin = createAdminSupabaseClient();
+  const { data: allowedUser, error: whitelistError } = await admin
+    .from("allowed_users")
+    .select("email")
+    .eq("email", email)
+    .maybeSingle();
+
+  if (whitelistError) {
+    redirect(messageUrl("error", "No pudimos procesar la solicitud. Inténtalo otra vez."));
+  }
+
+  if (allowedUser) {
+    const supabase = await createServerSupabaseClient();
+    const { error } = await supabase.auth.resetPasswordForEmail(email);
+    if (error) {
+      redirect(passwordResetUrl("error", "No pudimos enviar el código. Inténtalo otra vez más tarde."));
+    }
+  }
+
+  redirect(passwordResetUrl("notice", "Si el correo está autorizado, recibirás un código para restablecer tu contraseña."));
+}
+
+export async function resetPasswordWithCode(formData: FormData) {
+  const email = field(formData, "email").toLowerCase();
+  const token = field(formData, "token");
+  const password = field(formData, "password");
+  if (!email || !token || password.length < 8) {
+    redirect(passwordResetUrl("error", "Ingresa el correo, el código y una contraseña de al menos 8 caracteres."));
+  }
+
+  const admin = createAdminSupabaseClient();
+  const { data: allowedUser, error: whitelistError } = await admin
+    .from("allowed_users")
+    .select("email")
+    .eq("email", email)
+    .maybeSingle();
+
+  if (whitelistError) {
+    redirect(passwordResetUrl("error", "No pudimos validar tu acceso."));
+  }
+  if (!allowedUser) {
+    redirect(passwordResetUrl("error", "No pudimos validar el código. Solicita uno nuevo."));
+  }
+
+  const supabase = await createServerSupabaseClient();
+  const { error: verifyError } = await supabase.auth.verifyOtp({
+    email,
+    token,
+    type: "recovery",
+  });
+  if (verifyError) {
+    redirect(passwordResetUrl("error", "El código no es válido o ya venció. Solicita uno nuevo."));
+  }
+
+  const { error: updateError } = await supabase.auth.updateUser({ password });
+  if (updateError) {
+    redirect(passwordResetUrl("error", "No pudimos cambiar la contraseña. Inténtalo otra vez."));
+  }
+
+  redirect(messageUrl("notice", "Contraseña actualizada. Ya puedes iniciar sesión."));
 }
 
 export async function signOut() {

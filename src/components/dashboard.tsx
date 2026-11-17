@@ -28,7 +28,7 @@ type SavingsGoal = Database["public"]["Tables"]["savings_goals"]["Row"];
 type Category = Database["public"]["Tables"]["categories"]["Row"];
 
 type DashboardProps = {
-  email: string;
+  username: string;
   month: string;
   today: string;
   error?: string;
@@ -66,7 +66,7 @@ function percent(value: number) {
 }
 
 export function Dashboard({
-  email,
+  username,
   month,
   today,
   error,
@@ -112,8 +112,8 @@ export function Dashboard({
         </nav>
         <div className="sidebar-bottom">
           <div className="account-card">
-            <span className="avatar">{email.charAt(0).toUpperCase() || "U"}</span>
-            <span className="account-email" title={email}>{email}</span>
+            <span className="avatar">{username.charAt(0).toUpperCase() || "U"}</span>
+            <span className="account-email" title={username}>{username}</span>
             <form action={signOut}>
               <button className="logout-button" type="submit">Cerrar sesión</button>
             </form>
