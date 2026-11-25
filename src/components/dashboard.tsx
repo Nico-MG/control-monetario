@@ -1,6 +1,7 @@
 "use client";
 
 import { useState } from "react";
+import Link from "next/link";
 import {
   ArrowDownLeft,
   ArrowUpRight,
@@ -34,14 +35,23 @@ type Budget = Database["public"]["Tables"]["budgets"]["Row"];
 type SavingsGoal = Database["public"]["Tables"]["savings_goals"]["Row"];
 type Category = Database["public"]["Tables"]["categories"]["Row"];
 
+export type DashboardSection =
+  | "overview"
+  | "transactions"
+  | "budgets"
+  | "goals"
+  | "categories";
+
 type DashboardProps = {
+  section: DashboardSection;
   email: string;
   month: string;
   today: string;
   error?: string;
   notice?: string;
+  selectedCategoryId?: string;
   transactions: Transaction[];
-  recentTransactions: Transaction[];
+  historyTransactions: Transaction[];
   budgets: Budget[];
   closedBudgetCategories: string[];
   goals: SavingsGoal[];
@@ -78,13 +88,15 @@ function percent(value: number) {
 }
 
 export function Dashboard({
+  section,
   email,
   month,
   today,
   error,
   notice,
+  selectedCategoryId: initialSelectedCategoryId,
   transactions,
-  recentTransactions,
+  historyTransactions,
   budgets,
   closedBudgetCategories,
   goals,
@@ -94,6 +106,7 @@ export function Dashboard({
   const [transactionCategoryName, setTransactionCategoryName] = useState("");
   const [budgetEntryType, setBudgetEntryType] = useState<"amount" | "percentage">("amount");
   const [budgetCategoryName, setBudgetCategoryName] = useState("");
+  const [selectedCategoryId, setSelectedCategoryId] = useState(initialSelectedCategoryId ?? "");
   const income = transactions.reduce(
     (total, transaction) => total + (transaction.type === "income" ? transaction.amount : 0),
     0,
@@ -132,6 +145,14 @@ export function Dashboard({
   const selectedBudgetCategory = activeExpenseCategories.find(
     (category) => category.name === budgetCategoryName,
   );
+  const latestTransactions = historyTransactions.slice(0, 5);
+  const olderTransactionsByMonth = new Map<string, Transaction[]>();
+  for (const transaction of historyTransactions.slice(5)) {
+    const transactionMonth = transaction.date.slice(0, 7);
+    const monthTransactions = olderTransactionsByMonth.get(transactionMonth) ?? [];
+    monthTransactions.push(transaction);
+    olderTransactionsByMonth.set(transactionMonth, monthTransactions);
+  }
   const closedCategorySet = new Set(closedBudgetCategories);
   const activeBudgetGroups = budgetGroups.filter((budget) => !closedCategorySet.has(budget.category));
   const closedBudgetGroups = budgetGroups.filter((budget) => closedCategorySet.has(budget.category));
@@ -149,17 +170,27 @@ export function Dashboard({
   return (
     <div className="app-shell">
       <aside className="sidebar">
-        <a className="brand" href="#resumen">
+        <Link className="brand" href="/">
           <span className="brand-mark">C</span>
           <span>Control Monetario</span>
-        </a>
+        </Link>
         <p className="nav-label">Tu espacio</p>
         <nav className="side-nav">
-          <a className="active" href="#resumen"><LayoutDashboard /> Resumen</a>
-          <a href="#nuevo-movimiento"><CreditCard /> Movimientos</a>
-          <a href="#presupuestos"><Wallet /> Presupuestos</a>
-          <a href="#metas"><Goal /> Metas de ahorro</a>
-          <a href="#categorias"><Tags /> Categorías</a>
+          <Link aria-current={section === "overview" ? "page" : undefined} className={section === "overview" ? "active" : ""} href="/">
+            <LayoutDashboard /> Resumen
+          </Link>
+          <Link aria-current={section === "transactions" ? "page" : undefined} className={section === "transactions" ? "active" : ""} href="/movimientos">
+            <CreditCard /> Movimientos
+          </Link>
+          <Link aria-current={section === "budgets" ? "page" : undefined} className={section === "budgets" ? "active" : ""} href="/presupuestos">
+            <Wallet /> Presupuestos
+          </Link>
+          <Link aria-current={section === "goals" ? "page" : undefined} className={section === "goals" ? "active" : ""} href="/metas">
+            <Goal /> Metas
+          </Link>
+          <Link aria-current={section === "categories" ? "page" : undefined} className={section === "categories" ? "active" : ""} href="/categorias">
+            <Tags /> Categorías
+          </Link>
         </nav>
         <div className="sidebar-bottom">
           <div className="account-card">
@@ -172,24 +203,38 @@ export function Dashboard({
         </div>
       </aside>
 
-      <main className="main-area" id="resumen">
+      <main className="main-area">
         <header className="topbar">
           <div>
             <p className="eyebrow">Tu panorama financiero</p>
-            <h1>Resumen mensual</h1>
-            <p className="subhead">Un vistazo claro a lo que entra, sale y estás construyendo.</p>
+            <h1>
+              {section === "overview" && "Resumen mensual"}
+              {section === "transactions" && "Movimientos"}
+              {section === "budgets" && "Presupuestos"}
+              {section === "goals" && "Metas de ahorro"}
+              {section === "categories" && "Categorías"}
+            </h1>
+            <p className="subhead">
+              {section === "overview" && "Un vistazo claro a lo que entra, sale y estás construyendo."}
+              {section === "transactions" && "Registra y revisa tus ingresos y gastos."}
+              {section === "budgets" && "Controla tus montos y porcentajes por categoría."}
+              {section === "goals" && "Avanza paso a paso hacia tus objetivos."}
+              {section === "categories" && "Administra las categorías que organizan tus movimientos."}
+            </p>
           </div>
-          <form className="month-picker" action="/">
-            <CalendarDays aria-hidden="true" />
-            <input aria-label="Mes" defaultValue={month} name="month" type="month" />
-            <button className="text-link" type="submit">Ver</button>
-          </form>
+          {(section === "overview" || section === "budgets") && (
+            <form className="month-picker" action={section === "overview" ? "/" : "/presupuestos"}>
+              <CalendarDays aria-hidden="true" />
+              <input aria-label="Mes" defaultValue={month} name="month" type="month" />
+              <button className="text-link" type="submit">Ver</button>
+            </form>
+          )}
         </header>
 
         {error && <div className="notice error">{error}</div>}
         {notice && <div className="notice">{notice}</div>}
 
-        <section aria-label="Resumen del mes" className="summary-grid">
+        {section === "overview" && <section aria-label="Resumen del mes" className="summary-grid">
           <article className="summary-card">
             <div className="summary-label">
               <span>Ingresos</span><span className="summary-icon"><ArrowDownLeft /></span>
@@ -213,11 +258,11 @@ export function Dashboard({
             <div className="summary-value">{currency.format(income - expenses)}</div>
             <div className="summary-note">Ingresos menos gastos registrados</div>
           </article>
-        </section>
+        </section>}
 
-        <div className="content-grid">
-          <div className="stack">
-            <section className="panel" id="presupuestos">
+        <div className={`content-grid section-${section}`}>
+          {(section === "budgets" || section === "transactions") && <div className="stack">
+            {section === "budgets" && <section className="panel" id="presupuestos">
               <div className="panel-heading">
                 <div>
                   <h2>Presupuesto por categoría</h2>
@@ -409,18 +454,18 @@ export function Dashboard({
                   <button className="primary-button" type="submit"><Plus /> Agregar monto</button>
                 </div>
               </form>
-            </section>
+            </section>}
 
-            <section className="panel" id="movimientos">
+            {section === "transactions" && <section className="panel" id="movimientos">
               <div className="panel-heading">
                 <div>
-                  <h2>Movimientos recientes</h2>
-                  <p>Los últimos ingresos y gastos que registraste.</p>
+                  <h2>Historial de movimientos</h2>
+                  <p>Los cinco más recientes y los anteriores agrupados por mes.</p>
                 </div>
               </div>
-              {recentTransactions.length > 0 ? (
+              {latestTransactions.length > 0 ? (
                 <div className="transaction-list">
-                  {recentTransactions.map((transaction) => (
+                  {latestTransactions.map((transaction) => (
                     <article className="transaction" key={transaction.id}>
                       <span className="transaction-icon">
                         {transaction.type === "income" ? <ArrowDownLeft /> : <ArrowUpRight />}
@@ -438,13 +483,40 @@ export function Dashboard({
                   ))}
                 </div>
               ) : (
-                <div className="empty-state">Todavía no hay movimientos. Registra el primero en el formulario.</div>
+                <div className="empty-state">Todavía no hay movimientos. Registra el primero usando el formulario.</div>
               )}
-            </section>
-          </div>
+              {Array.from(olderTransactionsByMonth, ([transactionMonth, monthTransactions]) => (
+                <details className="transaction-month-group" key={transactionMonth}>
+                  <summary>
+                    <span>{formatMonth(transactionMonth)}</span>
+                    <span>{monthTransactions.length} movimientos</span>
+                  </summary>
+                  <div className="transaction-list">
+                    {monthTransactions.map((transaction) => (
+                      <article className="transaction" key={transaction.id}>
+                        <span className="transaction-icon">
+                          {transaction.type === "income" ? <ArrowDownLeft /> : <ArrowUpRight />}
+                        </span>
+                        <div>
+                          <div className="transaction-title">{transaction.description}</div>
+                          <div className="transaction-detail">
+                            {transaction.category} · {dateFormatter.format(new Date(`${transaction.date}T00:00:00Z`))}
+                          </div>
+                        </div>
+                        <span className={`transaction-amount ${transaction.type}`}>
+                          {transaction.type === "income" ? "+" : "−"}{currency.format(transaction.amount)}
+                        </span>
+                      </article>
+                    ))}
+                  </div>
+                </details>
+              ))}
+            </section>}
+          </div>}
 
-          <div className="stack right-column">
-            <section className="panel" id="nuevo-movimiento">
+          {(section === "transactions" || section === "goals" || section === "categories") &&
+            <div className="stack right-column">
+            {section === "transactions" && <section className="panel" id="nuevo-movimiento">
               <div className="panel-heading">
                 <div>
                   <h2>Agregar movimiento</h2>
@@ -510,9 +582,9 @@ export function Dashboard({
                   <button className="primary-button" type="submit"><Plus /> Guardar</button>
                 </div>
               </form>
-            </section>
+            </section>}
 
-            <section className="panel" id="metas">
+            {section === "goals" && <section className="panel" id="metas">
               <div className="panel-heading">
                 <div>
                   <h2>Metas de ahorro</h2>
@@ -583,9 +655,9 @@ export function Dashboard({
                   <button className="primary-button" type="submit"><Plus /> Crear meta</button>
                 </div>
               </form>
-            </section>
+            </section>}
 
-            <section className="panel" id="categorias">
+            {section === "categories" && <section className="panel" id="categorias">
               <div className="panel-heading">
                 <div>
                   <h2>Administrar categorías</h2>
@@ -622,11 +694,28 @@ export function Dashboard({
                   <button className="primary-button" type="submit"><Plus /> Crear categoría</button>
                 </div>
               </form>
-              <div className="category-management-list">
-                {categories.length === 0 && (
-                  <div className="empty-state">Todavía no hay categorías. Crea la primera con el formulario.</div>
-                )}
-                {categories.map((category) => (
+              {categories.length > 0 && (
+                <div className="field category-selector">
+                  <label htmlFor="managed-category">Selecciona una categoría para editar o eliminar</label>
+                  <select
+                    id="managed-category"
+                    onChange={(event) => setSelectedCategoryId(event.target.value)}
+                    value={selectedCategoryId}
+                  >
+                    <option value="">Selecciona una categoría</option>
+                    {categories.map((category) => (
+                      <option key={category.id} value={category.id}>
+                        {category.name}{category.is_active ? "" : " (eliminada)"}
+                      </option>
+                    ))}
+                  </select>
+                </div>
+              )}
+              {categories.length === 0 ? (
+                <div className="empty-state">Todavía no hay categorías. Crea la primera con el formulario.</div>
+              ) : selectedCategoryId && categories.some((category) => category.id === selectedCategoryId) ? (
+                <div className="category-management-list">
+                {categories.filter((category) => category.id === selectedCategoryId).map((category) => (
                   <div
                     className={`category-management-row${category.is_active ? "" : " archived"}`}
                     key={category.id}
@@ -683,12 +772,16 @@ export function Dashboard({
                     </div>
                   </div>
                 ))}
-              </div>
+                </div>
+              ) : (
+                <div className="empty-state">Selecciona una categoría para ver sus opciones.</div>
+              )}
               <p className="category-history-note">
                 Al eliminar una categoría, deja de aparecer en los formularios; sus movimientos y presupuestos anteriores se conservan.
               </p>
-            </section>
+            </section>}
           </div>
+          }
         </div>
       </main>
     </div>

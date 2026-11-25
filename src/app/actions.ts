@@ -9,8 +9,8 @@ function field(formData: FormData, name: string) {
   return typeof value === "string" ? value.trim() : "";
 }
 
-function messageUrl(kind: "error" | "notice", message: string) {
-  return `/?${kind}=${encodeURIComponent(message)}`;
+function messageUrl(kind: "error" | "notice", message: string, path = "/") {
+  return `${path}?${kind}=${encodeURIComponent(message)}`;
 }
 
 function requireIntegerAmount(value: string, allowZero = false) {
@@ -64,6 +64,7 @@ async function authenticatedClient() {
 async function requireCategory(
   supabase: Awaited<ReturnType<typeof authenticatedClient>>,
   name: string,
+  path = "/",
 ) {
   const { data, error } = await supabase
     .from("categories")
@@ -72,10 +73,10 @@ async function requireCategory(
     .maybeSingle();
 
   if (error) {
-    redirect(messageUrl("error", "No pudimos validar las categorías. Revisa la migración de Supabase."));
+    redirect(messageUrl("error", "No pudimos validar las categorías. Revisa la migración de Supabase.", path));
   }
   if (!data || !data.is_active) {
-    redirect(messageUrl("error", "Selecciona una categoría de la lista."));
+    redirect(messageUrl("error", "Selecciona una categoría de la lista.", path));
   }
   return data;
 }
@@ -140,13 +141,13 @@ export async function createTransaction(formData: FormData) {
     !isDate(date) ||
     (type !== "income" && type !== "expense")
   ) {
-    redirect(messageUrl("error", "Revisa los datos del movimiento e inténtalo de nuevo."));
+    redirect(messageUrl("error", "Revisa los datos del movimiento e inténtalo de nuevo.", "/movimientos"));
   }
 
   const supabase = await authenticatedClient();
-  const categoryData = await requireCategory(supabase, category);
+  const categoryData = await requireCategory(supabase, category, "/movimientos");
   if (categoryData.transaction_type !== type) {
-    redirect(messageUrl("error", "Selecciona una categoría del mismo tipo que el movimiento."));
+    redirect(messageUrl("error", "Selecciona una categoría del mismo tipo que el movimiento.", "/movimientos"));
   }
 
   const { error } = await supabase.from("transactions").insert({
@@ -159,11 +160,12 @@ export async function createTransaction(formData: FormData) {
   });
 
   if (error) {
-    redirect(messageUrl("error", "No pudimos guardar el movimiento. Revisa la configuración de Supabase."));
+    redirect(messageUrl("error", "No pudimos guardar el movimiento. Revisa la configuración de Supabase.", "/movimientos"));
   }
 
   revalidatePath("/");
-  redirect(messageUrl("notice", "Movimiento guardado."));
+  revalidatePath("/movimientos");
+  redirect(messageUrl("notice", "Movimiento guardado.", "/movimientos"));
 }
 
 export async function createBudget(formData: FormData) {
@@ -184,13 +186,13 @@ export async function createBudget(formData: FormData) {
     (entryType === "percentage" && incomePercentage === null) ||
     comment.length > 500
   ) {
-    redirect(messageUrl("error", "Revisa los datos del presupuesto."));
+    redirect(messageUrl("error", "Revisa los datos del presupuesto.", "/presupuestos"));
   }
 
   const supabase = await authenticatedClient();
-  const categoryData = await requireCategory(supabase, category);
+  const categoryData = await requireCategory(supabase, category, "/presupuestos");
   if (categoryData.transaction_type !== "expense") {
-    redirect(messageUrl("error", "Solo puedes presupuestar categorías de gasto."));
+    redirect(messageUrl("error", "Solo puedes presupuestar categorías de gasto.", "/presupuestos"));
   }
 
   if (incomePercentage !== null) {
@@ -201,7 +203,7 @@ export async function createBudget(formData: FormData) {
       .eq("category", category);
 
     if (existingEntriesError) {
-      redirect(messageUrl("error", "No pudimos revisar los porcentajes ya asignados."));
+      redirect(messageUrl("error", "No pudimos revisar los porcentajes ya asignados.", "/presupuestos"));
     }
 
     const assignedPercentage = existingEntries.reduce(
@@ -209,7 +211,7 @@ export async function createBudget(formData: FormData) {
       0,
     );
     if (assignedPercentage + incomePercentage > 100) {
-      redirect(messageUrl("error", "Los porcentajes de esta categoría no pueden superar el 100%."));
+      redirect(messageUrl("error", "Los porcentajes de esta categoría no pueden superar el 100%.", "/presupuestos"));
     }
   }
 
@@ -223,11 +225,12 @@ export async function createBudget(formData: FormData) {
   });
 
   if (error) {
-    redirect(messageUrl("error", "No pudimos guardar el presupuesto."));
+    redirect(messageUrl("error", "No pudimos guardar el presupuesto.", "/presupuestos"));
   }
 
   revalidatePath("/");
-  redirect(`/?month=${month}&notice=${encodeURIComponent("Monto agregado al presupuesto.")}`);
+  revalidatePath("/presupuestos");
+  redirect(`/presupuestos?month=${month}&notice=${encodeURIComponent("Monto agregado al presupuesto.")}`);
 }
 
 export async function closeBudgetCategory(formData: FormData) {
@@ -235,7 +238,7 @@ export async function closeBudgetCategory(formData: FormData) {
   const month = field(formData, "month");
 
   if (!category || !isMonth(month)) {
-    redirect(messageUrl("error", "Selecciona un mes y una categoría válidos."));
+    redirect(messageUrl("error", "Selecciona un mes y una categoría válidos.", "/presupuestos"));
   }
 
   const supabase = await authenticatedClient();
@@ -265,7 +268,7 @@ export async function closeBudgetCategory(formData: FormData) {
   ]);
 
   if (budgets.error || expenses.error || incomes.error) {
-    redirect(messageUrl("error", "No pudimos validar el presupuesto de la categoría."));
+    redirect(messageUrl("error", "No pudimos validar el presupuesto de la categoría.", "/presupuestos"));
   }
 
   const monthlyIncome = incomes.data.reduce((total, entry) => total + entry.amount, 0);
@@ -279,7 +282,7 @@ export async function closeBudgetCategory(formData: FormData) {
   );
   const spentAmount = expenses.data.reduce((total, entry) => total + entry.amount, 0);
   if (budgetAmount <= 0 || spentAmount < budgetAmount) {
-    redirect(messageUrl("error", "Solo puedes cerrar una categoría cuando hayas completado su presupuesto."));
+    redirect(messageUrl("error", "Solo puedes cerrar una categoría cuando hayas completado su presupuesto.", "/presupuestos"));
   }
 
   const { error } = await supabase.from("budget_category_status").upsert(
@@ -288,11 +291,12 @@ export async function closeBudgetCategory(formData: FormData) {
   );
 
   if (error) {
-    redirect(messageUrl("error", "No pudimos cerrar la categoría."));
+    redirect(messageUrl("error", "No pudimos cerrar la categoría.", "/presupuestos"));
   }
 
   revalidatePath("/");
-  redirect(`/?month=${month}&notice=${encodeURIComponent("Categoría cerrada para este mes.")}`);
+  revalidatePath("/presupuestos");
+  redirect(`/presupuestos?month=${month}&notice=${encodeURIComponent("Categoría cerrada para este mes.")}`);
 }
 
 export async function reopenBudgetCategory(formData: FormData) {
@@ -300,7 +304,7 @@ export async function reopenBudgetCategory(formData: FormData) {
   const month = field(formData, "month");
 
   if (!category || !isMonth(month)) {
-    redirect(messageUrl("error", "Selecciona un mes y una categoría válidos."));
+    redirect(messageUrl("error", "Selecciona un mes y una categoría válidos.", "/presupuestos"));
   }
 
   const supabase = await authenticatedClient();
@@ -314,17 +318,18 @@ export async function reopenBudgetCategory(formData: FormData) {
     .maybeSingle();
 
   if (error || !data) {
-    redirect(messageUrl("error", "No pudimos reabrir la categoría."));
+    redirect(messageUrl("error", "No pudimos reabrir la categoría.", "/presupuestos"));
   }
 
   revalidatePath("/");
-  redirect(`/?month=${month}&notice=${encodeURIComponent("Categoría reabierta.")}`);
+  revalidatePath("/presupuestos");
+  redirect(`/presupuestos?month=${month}&notice=${encodeURIComponent("Categoría reabierta.")}`);
 }
 
 export async function createExcelTemplateBudgets(formData: FormData) {
   const month = field(formData, "month");
   if (!isMonth(month)) {
-    redirect(messageUrl("error", "Selecciona un mes válido."));
+    redirect(messageUrl("error", "Selecciona un mes válido.", "/presupuestos"));
   }
 
   const template = [
@@ -348,7 +353,7 @@ export async function createExcelTemplateBudgets(formData: FormData) {
     .select("name, transaction_type, scheme, is_active");
 
   if (categoriesError) {
-    redirect(messageUrl("error", "No pudimos cargar las categorías."));
+    redirect(messageUrl("error", "No pudimos cargar las categorías.", "/presupuestos"));
   }
 
   const { data: existingBudgets, error: budgetsError } = await supabase
@@ -357,7 +362,7 @@ export async function createExcelTemplateBudgets(formData: FormData) {
     .eq("month", `${month}-01`);
 
   if (budgetsError) {
-    redirect(messageUrl("error", "No pudimos revisar el presupuesto del mes."));
+    redirect(messageUrl("error", "No pudimos revisar el presupuesto del mes.", "/presupuestos"));
   }
 
   const categoriesByName = new Map(
@@ -395,7 +400,7 @@ export async function createExcelTemplateBudgets(formData: FormData) {
   if (newCategories.length > 0) {
     const { error } = await supabase.from("categories").insert(newCategories);
     if (error) {
-      redirect(messageUrl("error", "No pudimos agregar las categorías de la plantilla."));
+      redirect(messageUrl("error", "No pudimos agregar las categorías de la plantilla.", "/presupuestos"));
     }
     for (const category of newCategories) {
       categoriesByName.set(category.name.toLocaleLowerCase(), category);
@@ -417,12 +422,13 @@ export async function createExcelTemplateBudgets(formData: FormData) {
     const { error } = await supabase.from("budgets").insert(budgetEntries);
 
     if (error) {
-      redirect(messageUrl("error", "No pudimos cargar el presupuesto base."));
+      redirect(messageUrl("error", "No pudimos cargar el presupuesto base.", "/presupuestos"));
     }
   }
 
   revalidatePath("/");
-  redirect(`/?month=${month}&notice=${encodeURIComponent("Plantilla del Excel agregada al mes.")}`);
+  revalidatePath("/presupuestos");
+  redirect(`/presupuestos?month=${month}&notice=${encodeURIComponent("Plantilla del Excel agregada al mes.")}`);
 }
 
 export async function createCategory(formData: FormData) {
@@ -436,7 +442,7 @@ export async function createCategory(formData: FormData) {
     (transactionType !== "income" && transactionType !== "expense") ||
     (scheme !== "fixed" && scheme !== "variable")
   ) {
-    redirect(messageUrl("error", "Revisa el nombre, tipo y esquema de la categoría."));
+    redirect(messageUrl("error", "Revisa el nombre, tipo y esquema de la categoría.", "/categorias"));
   }
 
   const supabase = await authenticatedClient();
@@ -445,14 +451,15 @@ export async function createCategory(formData: FormData) {
     .insert({ name, transaction_type: transactionType, scheme });
 
   if (error?.code === "23505") {
-    redirect(messageUrl("error", "Ya existe una categoría con ese nombre."));
+    redirect(messageUrl("error", "Ya existe una categoría con ese nombre.", "/categorias"));
   }
   if (error) {
-    redirect(messageUrl("error", "No pudimos crear la categoría."));
+    redirect(messageUrl("error", "No pudimos crear la categoría.", "/categorias"));
   }
 
   revalidatePath("/");
-  redirect(messageUrl("notice", "Categoría creada."));
+  revalidatePath("/categorias");
+  redirect(messageUrl("notice", "Categoría creada.", "/categorias"));
 }
 
 export async function updateCategory(formData: FormData) {
@@ -468,7 +475,7 @@ export async function updateCategory(formData: FormData) {
     (transactionType !== "income" && transactionType !== "expense") ||
     (scheme !== "fixed" && scheme !== "variable")
   ) {
-    redirect(messageUrl("error", "Revisa los datos de la categoría."));
+    redirect(messageUrl("error", "Revisa los datos de la categoría.", "/categorias"));
   }
 
   const supabase = await authenticatedClient();
@@ -480,7 +487,7 @@ export async function updateCategory(formData: FormData) {
   });
 
   if (error?.code === "23505") {
-    redirect(messageUrl("error", "Ya existe una categoría con ese nombre."));
+    redirect(messageUrl("error", "Ya existe una categoría con ese nombre.", "/categorias"));
   }
   if (error) {
     redirect(
@@ -494,13 +501,16 @@ export async function updateCategory(formData: FormData) {
   }
 
   revalidatePath("/");
-  redirect(messageUrl("notice", "Categoría actualizada."));
+  revalidatePath("/categorias");
+  redirect(
+    `/categorias?category=${encodeURIComponent(categoryId)}&notice=${encodeURIComponent("Categoría actualizada.")}`,
+  );
 }
 
 export async function deleteCategory(formData: FormData) {
   const categoryId = field(formData, "category_id");
   if (!categoryId) {
-    redirect(messageUrl("error", "Selecciona una categoría válida."));
+    redirect(messageUrl("error", "Selecciona una categoría válida.", "/categorias"));
   }
 
   const supabase = await authenticatedClient();
@@ -512,17 +522,20 @@ export async function deleteCategory(formData: FormData) {
     .maybeSingle();
 
   if (error || !data) {
-    redirect(messageUrl("error", "No pudimos quitar la categoría de los selectores."));
+    redirect(messageUrl("error", "No pudimos quitar la categoría de los selectores.", "/categorias"));
   }
 
   revalidatePath("/");
-  redirect(messageUrl("notice", "Categoría eliminada de los selectores; el historial se conservó."));
+  revalidatePath("/categorias");
+  redirect(
+    `/categorias?category=${encodeURIComponent(categoryId)}&notice=${encodeURIComponent("Categoría eliminada de los selectores; el historial se conservó.")}`,
+  );
 }
 
 export async function restoreCategory(formData: FormData) {
   const categoryId = field(formData, "category_id");
   if (!categoryId) {
-    redirect(messageUrl("error", "Selecciona una categoría válida."));
+    redirect(messageUrl("error", "Selecciona una categoría válida.", "/categorias"));
   }
 
   const supabase = await authenticatedClient();
@@ -534,11 +547,14 @@ export async function restoreCategory(formData: FormData) {
     .maybeSingle();
 
   if (error || !data) {
-    redirect(messageUrl("error", "No pudimos restaurar la categoría."));
+    redirect(messageUrl("error", "No pudimos restaurar la categoría.", "/categorias"));
   }
 
   revalidatePath("/");
-  redirect(messageUrl("notice", "Categoría restaurada."));
+  revalidatePath("/categorias");
+  redirect(
+    `/categorias?category=${encodeURIComponent(categoryId)}&notice=${encodeURIComponent("Categoría restaurada.")}`,
+  );
 }
 
 export async function createGoal(formData: FormData) {
@@ -554,7 +570,7 @@ export async function createGoal(formData: FormData) {
     savedAmount === null ||
     (dueDate && !isDate(dueDate))
   ) {
-    redirect(messageUrl("error", "Revisa los datos de la meta de ahorro."));
+    redirect(messageUrl("error", "Revisa los datos de la meta de ahorro.", "/metas"));
   }
 
   const supabase = await authenticatedClient();
@@ -566,11 +582,12 @@ export async function createGoal(formData: FormData) {
   });
 
   if (error) {
-    redirect(messageUrl("error", "No pudimos guardar la meta."));
+    redirect(messageUrl("error", "No pudimos guardar la meta.", "/metas"));
   }
 
   revalidatePath("/");
-  redirect(messageUrl("notice", "Meta de ahorro creada."));
+  revalidatePath("/metas");
+  redirect(messageUrl("notice", "Meta de ahorro creada.", "/metas"));
 }
 
 export async function updateGoalProgress(formData: FormData) {
@@ -578,7 +595,7 @@ export async function updateGoalProgress(formData: FormData) {
   const savedAmount = requireIntegerAmount(field(formData, "saved_amount"), true);
 
   if (!goalId || savedAmount === null) {
-    redirect(messageUrl("error", "Ingresa un monto ahorrado válido."));
+    redirect(messageUrl("error", "Ingresa un monto ahorrado válido.", "/metas"));
   }
 
   const supabase = await authenticatedClient();
@@ -588,9 +605,10 @@ export async function updateGoalProgress(formData: FormData) {
     .eq("id", goalId);
 
   if (error) {
-    redirect(messageUrl("error", "No pudimos actualizar el progreso de la meta."));
+    redirect(messageUrl("error", "No pudimos actualizar el progreso de la meta.", "/metas"));
   }
 
   revalidatePath("/");
-  redirect(messageUrl("notice", "Progreso de la meta actualizado."));
+  revalidatePath("/metas");
+  redirect(messageUrl("notice", "Progreso de la meta actualizado.", "/metas"));
 }

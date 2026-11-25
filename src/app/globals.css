@@ -285,6 +285,17 @@ a {
   align-items: start;
 }
 
+.section-budgets,
+.section-goals,
+.section-categories {
+  grid-template-columns: minmax(0, 1fr);
+}
+
+.section-goals > .right-column,
+.section-categories > .right-column {
+  grid-column: 1;
+}
+
 .stack {
   display: grid;
   gap: 18px;
@@ -506,6 +517,32 @@ a {
   display: grid;
 }
 
+.transaction-month-group {
+  border-top: 1px solid #f0f1ee;
+  font-size: 11px;
+}
+
+.transaction-month-group > summary {
+  display: flex;
+  min-height: 46px;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  cursor: pointer;
+  color: #566159;
+  font-weight: 600;
+}
+
+.transaction-month-group > summary span:last-child {
+  color: var(--muted);
+  font-size: 10px;
+  font-weight: 400;
+}
+
+.transaction-month-group .transaction-list {
+  padding-bottom: 8px;
+}
+
 .transaction {
   display: grid;
   grid-template-columns: 36px minmax(0, 1fr) auto;
@@ -622,6 +659,20 @@ a {
   margin-bottom: 16px;
   border-bottom: 1px solid #f0f1ee;
   padding-bottom: 16px;
+}
+
+.category-selector {
+  margin-bottom: 16px;
+}
+
+.category-selector select {
+  min-height: 42px;
+  border: 1px solid #e6eae4;
+  border-radius: 8px;
+  background: #fff;
+  padding: 0 10px;
+  color: var(--ink);
+  font-size: 12px;
 }
 
 .category-create-submit {
@@ -847,7 +898,7 @@ a {
 
   .right-column {
     display: grid;
-    grid-template-columns: repeat(2, minmax(0, 1fr));
+    grid-template-columns: minmax(0, 1fr);
     align-items: start;
   }
 }
