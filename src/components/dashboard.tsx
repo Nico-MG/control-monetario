@@ -85,7 +85,21 @@ export function Dashboard({
     (total, transaction) => total + (transaction.type === "expense" ? transaction.amount : 0),
     0,
   );
-  const planned = budgets.reduce((total, budget) => total + budget.amount, 0);
+  const budgetsByCategory = new Map<string, Budget[]>();
+  for (const budget of budgets) {
+    const entries = budgetsByCategory.get(budget.category) ?? [];
+    entries.push(budget);
+    budgetsByCategory.set(budget.category, entries);
+  }
+  const budgetGroups = Array.from(budgetsByCategory, ([category, entries]) => ({
+    category,
+    entries,
+    amount: entries.reduce((total, entry) => total + entry.amount, 0),
+    scheme: entries.every((entry) => entry.scheme === entries[0].scheme)
+      ? entries[0].scheme
+      : null,
+  }));
+  const planned = budgetGroups.reduce((total, budget) => total + budget.amount, 0);
   const spentByCategory = new Map<string, number>();
   for (const transaction of transactions) {
     if (transaction.type === "expense") {
@@ -173,14 +187,14 @@ export function Dashboard({
                   <p>Seguimiento de gastos para {formatMonth(month)}.</p>
                 </div>
               </div>
-              {budgets.length > 0 ? (
+              {budgetGroups.length > 0 ? (
                 <div className="budget-list">
-                  {budgets.map((budget) => {
+                  {budgetGroups.map((budget) => {
                     const spent = spentByCategory.get(budget.category) ?? 0;
                     const ratio = budget.amount > 0 ? spent / budget.amount : spent > 0 ? 1 : 0;
                     const width = Math.min(ratio * 100, 100);
                     return (
-                      <div key={budget.id}>
+                      <div className="budget-category" key={budget.category}>
                         <div className="budget-row-head">
                           <strong>{budget.category}</strong>
                           <span>{currency.format(spent)} / {currency.format(budget.amount)}</span>
@@ -199,13 +213,28 @@ export function Dashboard({
                           />
                         </div>
                         <div className="progress-caption">
-                          <span>{budget.scheme === "fixed" ? "Fijo" : "Variable"}</span>
+                          <span>
+                            {budget.scheme === null ? "Mixto" : budget.scheme === "fixed" ? "Fijo" : "Variable"}
+                          </span>
                           <span>
                             {ratio > 1
                               ? `Excedido en ${currency.format(spent - budget.amount)}`
                               : `${currency.format(budget.amount - spent)} disponible`}
                           </span>
                         </div>
+                        <details className="budget-details">
+                          <summary>
+                            Ver {budget.entries.length === 1 ? "registro" : `${budget.entries.length} registros`}
+                          </summary>
+                          <div className="budget-entry-list">
+                            {budget.entries.map((entry) => (
+                              <div className="budget-entry" key={entry.id}>
+                                <span>{entry.comment || "Sin comentario"}</span>
+                                <strong>{currency.format(entry.amount)}</strong>
+                              </div>
+                            ))}
+                          </div>
+                        </details>
                       </div>
                     );
                   })}
@@ -220,8 +249,11 @@ export function Dashboard({
                   </form>
                 </div>
               )}
-              <form action={createBudget} className="form-grid" style={{ marginTop: 20 }}>
-                <input name="month" type="hidden" value={month} />
+              <form action={createBudget} className="form-grid budget-form" style={{ marginTop: 20 }}>
+                <div className="field">
+                  <label htmlFor="budget-month">Mes</label>
+                  <input defaultValue={month} id="budget-month" name="month" required type="month" />
+                </div>
                 <div className="field">
                   <label htmlFor="budget-category">Categoría</label>
                   <select defaultValue="" id="budget-category" name="category" required>
@@ -234,7 +266,7 @@ export function Dashboard({
                   </select>
                 </div>
                 <div className="field">
-                  <label htmlFor="budget-amount">Monto planeado (CLP)</label>
+                  <label htmlFor="budget-amount">Monto a agregar (CLP)</label>
                   <input id="budget-amount" min="0" name="amount" required type="number" />
                 </div>
                 <div className="field">
@@ -244,8 +276,17 @@ export function Dashboard({
                     <option value="variable">Variable</option>
                   </select>
                 </div>
-                <div className="form-actions" style={{ alignItems: "end", justifyContent: "end", marginTop: 0 }}>
-                  <button className="primary-button" type="submit"><Plus /> Guardar categoría</button>
+                <div className="field full">
+                  <label htmlFor="budget-comment">Comentario (opcional)</label>
+                  <input
+                    id="budget-comment"
+                    maxLength={500}
+                    name="comment"
+                    placeholder="Ej. Pago mensual, ajuste o gasto puntual"
+                  />
+                </div>
+                <div className="form-actions budget-submit">
+                  <button className="primary-button" type="submit"><Plus /> Agregar monto</button>
                 </div>
               </form>
               <form action={createCategory} className="category-form">

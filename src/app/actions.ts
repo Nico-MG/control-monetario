@@ -156,11 +156,13 @@ export async function createBudget(formData: FormData) {
   const month = field(formData, "month");
   const scheme = field(formData, "scheme");
   const amount = requireIntegerAmount(field(formData, "amount"), true);
+  const comment = field(formData, "comment");
 
   if (
     !category ||
     !isMonth(month) ||
     amount === null ||
+    comment.length > 500 ||
     (scheme !== "fixed" && scheme !== "variable")
   ) {
     redirect(messageUrl("error", "Revisa los datos del presupuesto."));
@@ -169,17 +171,20 @@ export async function createBudget(formData: FormData) {
   const supabase = await authenticatedClient();
   await requireCategory(supabase, category);
 
-  const { error } = await supabase.from("budgets").upsert(
-    { category, month: `${month}-01`, amount, scheme },
-    { onConflict: "user_id,month,category" },
-  );
+  const { error } = await supabase.from("budgets").insert({
+    category,
+    month: `${month}-01`,
+    amount,
+    scheme,
+    comment: comment || null,
+  });
 
   if (error) {
     redirect(messageUrl("error", "No pudimos guardar el presupuesto."));
   }
 
   revalidatePath("/");
-  redirect(`/?month=${month}&notice=${encodeURIComponent("Presupuesto actualizado.")}`);
+  redirect(`/?month=${month}&notice=${encodeURIComponent("Monto agregado al presupuesto.")}`);
 }
 
 export async function createExcelTemplateBudgets(formData: FormData) {
@@ -212,10 +217,24 @@ export async function createExcelTemplateBudgets(formData: FormData) {
     redirect(messageUrl("error", "No pudimos cargar las categorías."));
   }
 
+  const { data: existingBudgets, error: budgetsError } = await supabase
+    .from("budgets")
+    .select("category")
+    .eq("month", `${month}-01`);
+
+  if (budgetsError) {
+    redirect(messageUrl("error", "No pudimos revisar el presupuesto del mes."));
+  }
+
   const canonicalNames = new Map(
     existingCategories.map(({ name }) => [name.toLocaleLowerCase(), name]),
   );
-  const newCategories = [...new Set(template.map(([category]) => category))]
+  const existingBudgetCategories = new Set(
+    existingBudgets.map(({ category }) => category.toLocaleLowerCase()),
+  );
+  const templateCategories = [...new Set(template.map(([category]) => category))]
+    .filter((name) => !existingBudgetCategories.has(name.toLocaleLowerCase()));
+  const newCategories = templateCategories
     .filter((name) => !canonicalNames.has(name.toLocaleLowerCase()))
     .map((name) => ({ name }));
 
@@ -233,18 +252,22 @@ export async function createExcelTemplateBudgets(formData: FormData) {
     }
   }
 
-  const { error } = await supabase.from("budgets").upsert(
-    template.map(([category, amount, scheme]) => ({
+  const budgetEntries = template
+    .filter(([category]) => !existingBudgetCategories.has(category.toLocaleLowerCase()))
+    .map(([category, amount, scheme]) => ({
       category: canonicalNames.get(category.toLocaleLowerCase()) ?? category,
       amount,
       scheme,
       month: `${month}-01`,
-    })),
-    { onConflict: "user_id,month,category", ignoreDuplicates: true },
-  );
+      comment: null,
+    }));
 
-  if (error) {
-    redirect(messageUrl("error", "No pudimos cargar el presupuesto base."));
+  if (budgetEntries.length > 0) {
+    const { error } = await supabase.from("budgets").insert(budgetEntries);
+
+    if (error) {
+      redirect(messageUrl("error", "No pudimos cargar el presupuesto base."));
+    }
   }
 
   revalidatePath("/");

@@ -68,6 +68,7 @@ export type Database = {
           category: string;
           amount: number;
           scheme: "fixed" | "variable";
+          comment: string | null;
           created_at: string;
         };
         Insert: {
@@ -77,6 +78,7 @@ export type Database = {
           category: string;
           amount: number;
           scheme?: "fixed" | "variable";
+          comment?: string | null;
           created_at?: string;
         };
         Update: {
@@ -86,6 +88,7 @@ export type Database = {
           category?: string;
           amount?: number;
           scheme?: "fixed" | "variable";
+          comment?: string | null;
           created_at?: string;
         };
         Relationships: [];

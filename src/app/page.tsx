@@ -68,7 +68,12 @@ async function HomeContent({ searchParams }: HomeProps) {
       .select("*")
       .order("date", { ascending: false })
       .limit(8),
-    supabase.from("budgets").select("*").eq("month", `${month}-01`).order("category"),
+    supabase
+      .from("budgets")
+      .select("*")
+      .eq("month", `${month}-01`)
+      .order("category")
+      .order("created_at", { ascending: true }),
     supabase.from("savings_goals").select("*").order("created_at", { ascending: false }),
     supabase.from("categories").select("*").order("name"),
   ]);
