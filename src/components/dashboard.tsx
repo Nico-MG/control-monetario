@@ -1,5 +1,6 @@
 "use client";
 
+import { useState } from "react";
 import {
   ArrowDownLeft,
   ArrowUpRight,
@@ -9,17 +10,21 @@ import {
   Goal,
   LayoutDashboard,
   Plus,
+  Tags,
   Wallet,
 } from "lucide-react";
 import {
   closeBudgetCategory,
   createBudget,
   createCategory,
+  deleteCategory,
   createExcelTemplateBudgets,
   createGoal,
   createTransaction,
   reopenBudgetCategory,
+  restoreCategory,
   signOut,
+  updateCategory,
   updateGoalProgress,
 } from "@/app/actions";
 import type { Database } from "@/lib/supabase/database.types";
@@ -55,6 +60,10 @@ const dateFormatter = new Intl.DateTimeFormat("es-CL", {
   timeZone: "UTC",
 });
 
+const percentageFormatter = new Intl.NumberFormat("es-CL", {
+  maximumFractionDigits: 2,
+});
+
 function formatMonth(month: string) {
   const [year, monthNumber] = month.split("-").map(Number);
   return new Intl.DateTimeFormat("es-CL", {
@@ -81,6 +90,10 @@ export function Dashboard({
   goals,
   categories,
 }: DashboardProps) {
+  const [transactionType, setTransactionType] = useState<"income" | "expense">("expense");
+  const [transactionCategoryName, setTransactionCategoryName] = useState("");
+  const [budgetEntryType, setBudgetEntryType] = useState<"amount" | "percentage">("amount");
+  const [budgetCategoryName, setBudgetCategoryName] = useState("");
   const income = transactions.reduce(
     (total, transaction) => total + (transaction.type === "income" ? transaction.amount : 0),
     0,
@@ -98,11 +111,27 @@ export function Dashboard({
   const budgetGroups = Array.from(budgetsByCategory, ([category, entries]) => ({
     category,
     entries,
-    amount: entries.reduce((total, entry) => total + entry.amount, 0),
+    amount: entries.reduce(
+      (total, entry) =>
+        total +
+        (entry.income_percentage === null
+          ? entry.amount
+          : Math.round((income * entry.income_percentage) / 100)),
+      0,
+    ),
     scheme: entries.every((entry) => entry.scheme === entries[0].scheme)
       ? entries[0].scheme
       : null,
   }));
+  const activeExpenseCategories = categories.filter(
+    (category) => category.is_active && category.transaction_type === "expense",
+  );
+  const activeTransactionCategories = categories.filter(
+    (category) => category.is_active && category.transaction_type === transactionType,
+  );
+  const selectedBudgetCategory = activeExpenseCategories.find(
+    (category) => category.name === budgetCategoryName,
+  );
   const closedCategorySet = new Set(closedBudgetCategories);
   const activeBudgetGroups = budgetGroups.filter((budget) => !closedCategorySet.has(budget.category));
   const closedBudgetGroups = budgetGroups.filter((budget) => closedCategorySet.has(budget.category));
@@ -127,9 +156,10 @@ export function Dashboard({
         <p className="nav-label">Tu espacio</p>
         <nav className="side-nav">
           <a className="active" href="#resumen"><LayoutDashboard /> Resumen</a>
+          <a href="#nuevo-movimiento"><CreditCard /> Movimientos</a>
           <a href="#presupuestos"><Wallet /> Presupuestos</a>
           <a href="#metas"><Goal /> Metas de ahorro</a>
-          <a href="#movimientos"><CreditCard /> Movimientos</a>
+          <a href="#categorias"><Tags /> Categorías</a>
         </nav>
         <div className="sidebar-bottom">
           <div className="account-card">
@@ -191,7 +221,9 @@ export function Dashboard({
               <div className="panel-heading">
                 <div>
                   <h2>Presupuesto por categoría</h2>
-                  <p>Seguimiento de gastos para {formatMonth(month)}.</p>
+                  <p>
+                    Seguimiento de {formatMonth(month)}. Los porcentajes usan los ingresos registrados en ese mes.
+                  </p>
                 </div>
               </div>
               {activeBudgetGroups.length > 0 ? (
@@ -238,7 +270,13 @@ export function Dashboard({
                             {budget.entries.map((entry) => (
                               <div className="budget-entry" key={entry.id}>
                                 <span>{entry.comment || "Sin comentario"}</span>
-                                <strong>{currency.format(entry.amount)}</strong>
+                                <strong>
+                                  {entry.income_percentage === null
+                                    ? currency.format(entry.amount)
+                                    : `${percentageFormatter.format(entry.income_percentage)}% · ${currency.format(
+                                        Math.round((income * entry.income_percentage) / 100),
+                                      )}`}
+                                </strong>
                               </div>
                             ))}
                           </div>
@@ -300,26 +338,64 @@ export function Dashboard({
                 </div>
                 <div className="field">
                   <label htmlFor="budget-category">Categoría</label>
-                  <select defaultValue="" id="budget-category" name="category" required>
+                  <select
+                    id="budget-category"
+                    name="category"
+                    onChange={(event) => setBudgetCategoryName(event.target.value)}
+                    required
+                    value={budgetCategoryName}
+                  >
                     <option disabled value="">
-                      {categories.length > 0 ? "Selecciona una categoría" : "Crea una categoría primero"}
+                      {activeExpenseCategories.length > 0
+                        ? "Selecciona una categoría"
+                        : "Crea una categoría de gasto primero"}
                     </option>
-                    {categories.map((category) => (
+                    {activeExpenseCategories.map((category) => (
                       <option key={category.id} value={category.name}>{category.name}</option>
                     ))}
                   </select>
                 </div>
                 <div className="field">
-                  <label htmlFor="budget-amount">Monto a agregar (CLP)</label>
-                  <input id="budget-amount" min="0" name="amount" required type="number" />
-                </div>
-                <div className="field">
-                  <label htmlFor="budget-scheme">Tipo</label>
-                  <select defaultValue="fixed" id="budget-scheme" name="scheme">
-                    <option value="fixed">Fijo</option>
-                    <option value="variable">Variable</option>
+                  <label htmlFor="budget-entry-type">Cálculo</label>
+                  <select
+                    id="budget-entry-type"
+                    name="entry_type"
+                    onChange={(event) =>
+                      setBudgetEntryType(event.target.value === "percentage" ? "percentage" : "amount")
+                    }
+                    value={budgetEntryType}
+                  >
+                    <option value="amount">Monto en CLP</option>
+                    <option value="percentage">% del ingreso mensual</option>
                   </select>
                 </div>
+                <div className="field">
+                  <label htmlFor="budget-category-scheme">Tipo de categoría</label>
+                  <div aria-live="polite" className="field-readonly" id="budget-category-scheme">
+                    {selectedBudgetCategory
+                      ? selectedBudgetCategory.scheme === "fixed" ? "Fijo" : "Variable"
+                      : "Se define en la categoría"}
+                  </div>
+                </div>
+                {budgetEntryType === "amount" ? (
+                  <div className="field">
+                    <label htmlFor="budget-amount">Monto a agregar (CLP)</label>
+                    <input id="budget-amount" min="0" name="amount" required type="number" />
+                  </div>
+                ) : (
+                  <div className="field">
+                    <label htmlFor="budget-income-percentage">% del ingreso mensual</label>
+                    <input
+                      id="budget-income-percentage"
+                      max="100"
+                      min="0.01"
+                      name="income_percentage"
+                      required
+                      step="0.01"
+                      type="number"
+                    />
+                  </div>
+                )}
                 <div className="field full">
                   <label htmlFor="budget-comment">Comentario (opcional)</label>
                   <input
@@ -332,20 +408,6 @@ export function Dashboard({
                 <div className="form-actions budget-submit">
                   <button className="primary-button" type="submit"><Plus /> Agregar monto</button>
                 </div>
-              </form>
-              <form action={createCategory} className="category-form">
-                <div className="field">
-                  <label htmlFor="new-category">Crear categoría</label>
-                  <input
-                    autoComplete="off"
-                    id="new-category"
-                    maxLength={60}
-                    name="name"
-                    placeholder="Ej. Salud"
-                    required
-                  />
-                </div>
-                <button className="secondary-button" type="submit"><Plus /> Agregar a la lista</button>
               </form>
             </section>
 
@@ -397,18 +459,35 @@ export function Dashboard({
                   </div>
                   <div className="field">
                     <label htmlFor="transaction-type">Tipo</label>
-                    <select id="transaction-type" name="type">
+                    <select
+                      id="transaction-type"
+                      name="type"
+                      onChange={(event) => {
+                        const nextType = event.target.value === "income" ? "income" : "expense";
+                        setTransactionType(nextType);
+                        setTransactionCategoryName("");
+                      }}
+                      value={transactionType}
+                    >
                       <option value="expense">Gasto</option>
                       <option value="income">Ingreso</option>
                     </select>
                   </div>
                   <div className="field">
                     <label htmlFor="transaction-category">Categoría</label>
-                    <select defaultValue="" id="transaction-category" name="category" required>
+                    <select
+                      id="transaction-category"
+                      name="category"
+                      onChange={(event) => setTransactionCategoryName(event.target.value)}
+                      required
+                      value={transactionCategoryName}
+                    >
                       <option disabled value="">
-                        {categories.length > 0 ? "Selecciona una categoría" : "Crea una categoría primero"}
+                        {activeTransactionCategories.length > 0
+                          ? "Selecciona una categoría"
+                          : `Crea una categoría de ${transactionType === "income" ? "ingreso" : "gasto"}`}
                       </option>
-                      {categories.map((category) => (
+                      {activeTransactionCategories.map((category) => (
                         <option key={category.id} value={category.name}>{category.name}</option>
                       ))}
                     </select>
@@ -504,6 +583,110 @@ export function Dashboard({
                   <button className="primary-button" type="submit"><Plus /> Crear meta</button>
                 </div>
               </form>
+            </section>
+
+            <section className="panel" id="categorias">
+              <div className="panel-heading">
+                <div>
+                  <h2>Administrar categorías</h2>
+                  <p>Define si cada categoría corresponde a ingresos o gastos y su tipo de presupuesto.</p>
+                </div>
+              </div>
+              <form action={createCategory} className="form-grid category-create-form">
+                <div className="field full">
+                  <label htmlFor="new-category-name">Nombre</label>
+                  <input
+                    autoComplete="off"
+                    id="new-category-name"
+                    maxLength={60}
+                    name="name"
+                    placeholder="Ej. Salud o sueldo"
+                    required
+                  />
+                </div>
+                <div className="field">
+                  <label htmlFor="new-category-type">Clasificación</label>
+                  <select defaultValue="expense" id="new-category-type" name="transaction_type">
+                    <option value="expense">Gasto</option>
+                    <option value="income">Ingreso</option>
+                  </select>
+                </div>
+                <div className="field">
+                  <label htmlFor="new-category-scheme">Tipo de presupuesto</label>
+                  <select defaultValue="fixed" id="new-category-scheme" name="scheme">
+                    <option value="fixed">Fijo</option>
+                    <option value="variable">Variable</option>
+                  </select>
+                </div>
+                <div className="form-actions category-create-submit">
+                  <button className="primary-button" type="submit"><Plus /> Crear categoría</button>
+                </div>
+              </form>
+              <div className="category-management-list">
+                {categories.length === 0 && (
+                  <div className="empty-state">Todavía no hay categorías. Crea la primera con el formulario.</div>
+                )}
+                {categories.map((category) => (
+                  <div
+                    className={`category-management-row${category.is_active ? "" : " archived"}`}
+                    key={category.id}
+                  >
+                    <form action={updateCategory} className="category-edit-form">
+                      <input name="category_id" type="hidden" value={category.id} />
+                      <div className="field">
+                        <label htmlFor={`category-name-${category.id}`}>Nombre</label>
+                        <input
+                          defaultValue={category.name}
+                          id={`category-name-${category.id}`}
+                          maxLength={60}
+                          name="name"
+                          required
+                        />
+                      </div>
+                      <div className="field">
+                        <label htmlFor={`category-type-${category.id}`}>Clasificación</label>
+                        <select
+                          defaultValue={category.transaction_type}
+                          id={`category-type-${category.id}`}
+                          name="transaction_type"
+                        >
+                          <option value="expense">Gasto</option>
+                          <option value="income">Ingreso</option>
+                        </select>
+                      </div>
+                      <div className="field">
+                        <label htmlFor={`category-scheme-${category.id}`}>Presupuesto</label>
+                        <select
+                          defaultValue={category.scheme}
+                          id={`category-scheme-${category.id}`}
+                          name="scheme"
+                        >
+                          <option value="fixed">Fijo</option>
+                          <option value="variable">Variable</option>
+                        </select>
+                      </div>
+                      <button className="secondary-button category-edit-button" type="submit">Guardar</button>
+                    </form>
+                    <div className="category-state-actions">
+                      <span>{category.is_active ? "Activa" : "Eliminada de selectores"}</span>
+                      {category.is_active ? (
+                        <form action={deleteCategory}>
+                          <input name="category_id" type="hidden" value={category.id} />
+                          <button className="text-link" type="submit">Eliminar</button>
+                        </form>
+                      ) : (
+                        <form action={restoreCategory}>
+                          <input name="category_id" type="hidden" value={category.id} />
+                          <button className="text-link" type="submit">Restaurar</button>
+                        </form>
+                      )}
+                    </div>
+                  </div>
+                ))}
+              </div>
+              <p className="category-history-note">
+                Al eliminar una categoría, deja de aparecer en los formularios; sus movimientos y presupuestos anteriores se conservan.
+              </p>
             </section>
           </div>
         </div>

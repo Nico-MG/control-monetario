@@ -8,18 +8,27 @@ export type Database = {
           id: string;
           user_id: string;
           name: string;
+          transaction_type: "income" | "expense";
+          scheme: "fixed" | "variable";
+          is_active: boolean;
           created_at: string;
         };
         Insert: {
           id?: string;
           user_id?: string;
           name: string;
+          transaction_type?: "income" | "expense";
+          scheme?: "fixed" | "variable";
+          is_active?: boolean;
           created_at?: string;
         };
         Update: {
           id?: string;
           user_id?: string;
           name?: string;
+          transaction_type?: "income" | "expense";
+          scheme?: "fixed" | "variable";
+          is_active?: boolean;
           created_at?: string;
         };
         Relationships: [];
@@ -69,6 +78,7 @@ export type Database = {
           amount: number;
           scheme: "fixed" | "variable";
           comment: string | null;
+          income_percentage: number | null;
           created_at: string;
         };
         Insert: {
@@ -79,6 +89,7 @@ export type Database = {
           amount: number;
           scheme?: "fixed" | "variable";
           comment?: string | null;
+          income_percentage?: number | null;
           created_at?: string;
         };
         Update: {
@@ -89,6 +100,7 @@ export type Database = {
           amount?: number;
           scheme?: "fixed" | "variable";
           comment?: string | null;
+          income_percentage?: number | null;
           created_at?: string;
         };
         Relationships: [];
@@ -152,7 +164,17 @@ export type Database = {
       };
     };
     Views: Record<string, never>;
-    Functions: Record<string, never>;
+    Functions: {
+      update_finance_category: {
+        Args: {
+          p_category_id: string;
+          p_name: string;
+          p_transaction_type: "income" | "expense";
+          p_scheme: "fixed" | "variable";
+        };
+        Returns: undefined;
+      };
+    };
     Enums: Record<string, never>;
     CompositeTypes: Record<string, never>;
   };

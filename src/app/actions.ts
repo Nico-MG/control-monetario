@@ -21,6 +21,20 @@ function requireIntegerAmount(value: string, allowZero = false) {
   return amount;
 }
 
+function requirePercentage(value: string) {
+  const percentage = Number(value);
+  const cents = Math.round(percentage * 100);
+  if (
+    !Number.isFinite(percentage) ||
+    percentage <= 0 ||
+    percentage > 100 ||
+    Math.abs(percentage * 100 - cents) > 0.000001
+  ) {
+    return null;
+  }
+  return percentage;
+}
+
 function isMonth(value: string) {
   return /^\d{4}-(0[1-9]|1[0-2])$/.test(value);
 }
@@ -47,25 +61,23 @@ async function authenticatedClient() {
   return supabase;
 }
 
-async function categoryExists(supabase: Awaited<ReturnType<typeof authenticatedClient>>, name: string) {
+async function requireCategory(
+  supabase: Awaited<ReturnType<typeof authenticatedClient>>,
+  name: string,
+) {
   const { data, error } = await supabase
     .from("categories")
-    .select("id")
+    .select("transaction_type, scheme, is_active")
     .eq("name", name)
     .maybeSingle();
 
-  return { exists: data !== null, error };
-}
-
-async function requireCategory(supabase: Awaited<ReturnType<typeof authenticatedClient>>, name: string) {
-  const result = await categoryExists(supabase, name);
-
-  if (result.error) {
+  if (error) {
     redirect(messageUrl("error", "No pudimos validar las categorías. Revisa la migración de Supabase."));
   }
-  if (!result.exists) {
+  if (!data || !data.is_active) {
     redirect(messageUrl("error", "Selecciona una categoría de la lista."));
   }
+  return data;
 }
 
 export async function signIn(formData: FormData) {
@@ -132,7 +144,10 @@ export async function createTransaction(formData: FormData) {
   }
 
   const supabase = await authenticatedClient();
-  await requireCategory(supabase, category);
+  const categoryData = await requireCategory(supabase, category);
+  if (categoryData.transaction_type !== type) {
+    redirect(messageUrl("error", "Selecciona una categoría del mismo tipo que el movimiento."));
+  }
 
   const { error } = await supabase.from("transactions").insert({
     description,
@@ -154,29 +169,57 @@ export async function createTransaction(formData: FormData) {
 export async function createBudget(formData: FormData) {
   const category = field(formData, "category");
   const month = field(formData, "month");
-  const scheme = field(formData, "scheme");
-  const amount = requireIntegerAmount(field(formData, "amount"), true);
+  const entryType = field(formData, "entry_type");
+  const amount =
+    entryType === "amount" ? requireIntegerAmount(field(formData, "amount"), true) : 0;
+  const incomePercentage =
+    entryType === "percentage" ? requirePercentage(field(formData, "income_percentage")) : null;
   const comment = field(formData, "comment");
 
   if (
     !category ||
     !isMonth(month) ||
+    (entryType !== "amount" && entryType !== "percentage") ||
     amount === null ||
-    comment.length > 500 ||
-    (scheme !== "fixed" && scheme !== "variable")
+    (entryType === "percentage" && incomePercentage === null) ||
+    comment.length > 500
   ) {
     redirect(messageUrl("error", "Revisa los datos del presupuesto."));
   }
 
   const supabase = await authenticatedClient();
-  await requireCategory(supabase, category);
+  const categoryData = await requireCategory(supabase, category);
+  if (categoryData.transaction_type !== "expense") {
+    redirect(messageUrl("error", "Solo puedes presupuestar categorías de gasto."));
+  }
+
+  if (incomePercentage !== null) {
+    const { data: existingEntries, error: existingEntriesError } = await supabase
+      .from("budgets")
+      .select("income_percentage")
+      .eq("month", `${month}-01`)
+      .eq("category", category);
+
+    if (existingEntriesError) {
+      redirect(messageUrl("error", "No pudimos revisar los porcentajes ya asignados."));
+    }
+
+    const assignedPercentage = existingEntries.reduce(
+      (total, entry) => total + (entry.income_percentage ?? 0),
+      0,
+    );
+    if (assignedPercentage + incomePercentage > 100) {
+      redirect(messageUrl("error", "Los porcentajes de esta categoría no pueden superar el 100%."));
+    }
+  }
 
   const { error } = await supabase.from("budgets").insert({
     category,
     month: `${month}-01`,
-    amount,
-    scheme,
+    amount: amount ?? 0,
+    scheme: categoryData.scheme,
     comment: comment || null,
+    income_percentage: incomePercentage,
   });
 
   if (error) {
@@ -196,15 +239,14 @@ export async function closeBudgetCategory(formData: FormData) {
   }
 
   const supabase = await authenticatedClient();
-  await requireCategory(supabase, category);
 
   const monthStart = `${month}-01`;
   const [year, monthNumber] = month.split("-").map(Number);
   const nextMonthStart = new Date(Date.UTC(year, monthNumber, 1)).toISOString().slice(0, 10);
-  const [budgets, expenses] = await Promise.all([
+  const [budgets, expenses, incomes] = await Promise.all([
     supabase
       .from("budgets")
-      .select("amount")
+      .select("amount, income_percentage")
       .eq("month", monthStart)
       .eq("category", category),
     supabase
@@ -214,13 +256,27 @@ export async function closeBudgetCategory(formData: FormData) {
       .eq("type", "expense")
       .gte("date", monthStart)
       .lt("date", nextMonthStart),
+    supabase
+      .from("transactions")
+      .select("amount")
+      .eq("type", "income")
+      .gte("date", monthStart)
+      .lt("date", nextMonthStart),
   ]);
 
-  if (budgets.error || expenses.error) {
+  if (budgets.error || expenses.error || incomes.error) {
     redirect(messageUrl("error", "No pudimos validar el presupuesto de la categoría."));
   }
 
-  const budgetAmount = budgets.data.reduce((total, entry) => total + entry.amount, 0);
+  const monthlyIncome = incomes.data.reduce((total, entry) => total + entry.amount, 0);
+  const budgetAmount = budgets.data.reduce(
+    (total, entry) =>
+      total +
+      (entry.income_percentage === null
+        ? entry.amount
+        : Math.round((monthlyIncome * entry.income_percentage) / 100)),
+    0,
+  );
   const spentAmount = expenses.data.reduce((total, entry) => total + entry.amount, 0);
   if (budgetAmount <= 0 || spentAmount < budgetAmount) {
     redirect(messageUrl("error", "Solo puedes cerrar una categoría cuando hayas completado su presupuesto."));
@@ -248,15 +304,16 @@ export async function reopenBudgetCategory(formData: FormData) {
   }
 
   const supabase = await authenticatedClient();
-  await requireCategory(supabase, category);
 
-  const { error } = await supabase
+  const { data, error } = await supabase
     .from("budget_category_status")
     .delete()
     .eq("month", `${month}-01`)
-    .eq("category", category);
+    .eq("category", category)
+    .select("category")
+    .maybeSingle();
 
-  if (error) {
+  if (error || !data) {
     redirect(messageUrl("error", "No pudimos reabrir la categoría."));
   }
 
@@ -288,7 +345,7 @@ export async function createExcelTemplateBudgets(formData: FormData) {
   const supabase = await authenticatedClient();
   const { data: existingCategories, error: categoriesError } = await supabase
     .from("categories")
-    .select("name");
+    .select("name, transaction_type, scheme, is_active");
 
   if (categoriesError) {
     redirect(messageUrl("error", "No pudimos cargar las categorías."));
@@ -303,40 +360,57 @@ export async function createExcelTemplateBudgets(formData: FormData) {
     redirect(messageUrl("error", "No pudimos revisar el presupuesto del mes."));
   }
 
-  const canonicalNames = new Map(
-    existingCategories.map(({ name }) => [name.toLocaleLowerCase(), name]),
+  const categoriesByName = new Map(
+    existingCategories.map((category) => [category.name.toLocaleLowerCase(), category]),
   );
   const existingBudgetCategories = new Set(
     existingBudgets.map(({ category }) => category.toLocaleLowerCase()),
   );
   const templateCategories = [...new Set(template.map(([category]) => category))]
     .filter((name) => !existingBudgetCategories.has(name.toLocaleLowerCase()));
+  const templateSchemeByName = new Map(
+    template.map(([name, , scheme]) => [name.toLocaleLowerCase(), scheme]),
+  );
   const newCategories = templateCategories
-    .filter((name) => !canonicalNames.has(name.toLocaleLowerCase()))
-    .map((name) => ({ name }));
+    .filter((name) => !categoriesByName.has(name.toLocaleLowerCase()))
+    .map((name) => ({
+      name,
+      transaction_type: "expense" as const,
+      scheme: templateSchemeByName.get(name.toLocaleLowerCase()) ?? "fixed",
+      is_active: true,
+    }));
+
+  for (const [name] of template) {
+    const existing = categoriesByName.get(name.toLocaleLowerCase());
+    if (existing && (!existing.is_active || existing.transaction_type !== "expense")) {
+      redirect(
+        messageUrl(
+          "error",
+          `La categoría ${name} debe estar activa y ser de gasto para usar la plantilla.`,
+        ),
+      );
+    }
+  }
 
   if (newCategories.length > 0) {
     const { error } = await supabase.from("categories").insert(newCategories);
     if (error) {
       redirect(messageUrl("error", "No pudimos agregar las categorías de la plantilla."));
     }
-  }
-
-  for (const [category] of template) {
-    const key = category.toLocaleLowerCase();
-    if (!canonicalNames.has(key)) {
-      canonicalNames.set(key, category);
+    for (const category of newCategories) {
+      categoriesByName.set(category.name.toLocaleLowerCase(), category);
     }
   }
 
   const budgetEntries = template
     .filter(([category]) => !existingBudgetCategories.has(category.toLocaleLowerCase()))
-    .map(([category, amount, scheme]) => ({
-      category: canonicalNames.get(category.toLocaleLowerCase()) ?? category,
+    .map(([category, amount]) => ({
+      category: categoriesByName.get(category.toLocaleLowerCase())?.name ?? category,
       amount,
-      scheme,
+      scheme: categoriesByName.get(category.toLocaleLowerCase())?.scheme ?? "fixed",
       month: `${month}-01`,
       comment: null,
+      income_percentage: null,
     }));
 
   if (budgetEntries.length > 0) {
@@ -353,13 +427,22 @@ export async function createExcelTemplateBudgets(formData: FormData) {
 
 export async function createCategory(formData: FormData) {
   const name = field(formData, "name");
+  const transactionType = field(formData, "transaction_type");
+  const scheme = field(formData, "scheme");
 
-  if (!name || name.length > 60) {
-    redirect(messageUrl("error", "Ingresa un nombre de categoría de hasta 60 caracteres."));
+  if (
+    !name ||
+    name.length > 60 ||
+    (transactionType !== "income" && transactionType !== "expense") ||
+    (scheme !== "fixed" && scheme !== "variable")
+  ) {
+    redirect(messageUrl("error", "Revisa el nombre, tipo y esquema de la categoría."));
   }
 
   const supabase = await authenticatedClient();
-  const { error } = await supabase.from("categories").insert({ name });
+  const { error } = await supabase
+    .from("categories")
+    .insert({ name, transaction_type: transactionType, scheme });
 
   if (error?.code === "23505") {
     redirect(messageUrl("error", "Ya existe una categoría con ese nombre."));
@@ -370,6 +453,92 @@ export async function createCategory(formData: FormData) {
 
   revalidatePath("/");
   redirect(messageUrl("notice", "Categoría creada."));
+}
+
+export async function updateCategory(formData: FormData) {
+  const categoryId = field(formData, "category_id");
+  const name = field(formData, "name");
+  const transactionType = field(formData, "transaction_type");
+  const scheme = field(formData, "scheme");
+
+  if (
+    !categoryId ||
+    !name ||
+    name.length > 60 ||
+    (transactionType !== "income" && transactionType !== "expense") ||
+    (scheme !== "fixed" && scheme !== "variable")
+  ) {
+    redirect(messageUrl("error", "Revisa los datos de la categoría."));
+  }
+
+  const supabase = await authenticatedClient();
+  const { error } = await supabase.rpc("update_finance_category", {
+    p_category_id: categoryId,
+    p_name: name,
+    p_transaction_type: transactionType,
+    p_scheme: scheme,
+  });
+
+  if (error?.code === "23505") {
+    redirect(messageUrl("error", "Ya existe una categoría con ese nombre."));
+  }
+  if (error) {
+    redirect(
+      messageUrl(
+        "error",
+        error.message.includes("changed to income")
+          ? "No puedes cambiar a ingreso una categoría que ya tiene presupuestos."
+          : "No pudimos actualizar la categoría.",
+      ),
+    );
+  }
+
+  revalidatePath("/");
+  redirect(messageUrl("notice", "Categoría actualizada."));
+}
+
+export async function deleteCategory(formData: FormData) {
+  const categoryId = field(formData, "category_id");
+  if (!categoryId) {
+    redirect(messageUrl("error", "Selecciona una categoría válida."));
+  }
+
+  const supabase = await authenticatedClient();
+  const { data, error } = await supabase
+    .from("categories")
+    .update({ is_active: false })
+    .eq("id", categoryId)
+    .select("id")
+    .maybeSingle();
+
+  if (error || !data) {
+    redirect(messageUrl("error", "No pudimos quitar la categoría de los selectores."));
+  }
+
+  revalidatePath("/");
+  redirect(messageUrl("notice", "Categoría eliminada de los selectores; el historial se conservó."));
+}
+
+export async function restoreCategory(formData: FormData) {
+  const categoryId = field(formData, "category_id");
+  if (!categoryId) {
+    redirect(messageUrl("error", "Selecciona una categoría válida."));
+  }
+
+  const supabase = await authenticatedClient();
+  const { data, error } = await supabase
+    .from("categories")
+    .update({ is_active: true })
+    .eq("id", categoryId)
+    .select("id")
+    .maybeSingle();
+
+  if (error || !data) {
+    redirect(messageUrl("error", "No pudimos restaurar la categoría."));
+  }
+
+  revalidatePath("/");
+  redirect(messageUrl("notice", "Categoría restaurada."));
 }
 
 export async function createGoal(formData: FormData) {
