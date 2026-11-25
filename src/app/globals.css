@@ -418,6 +418,59 @@ a {
   color: var(--ink);
 }
 
+.budget-actions {
+  display: flex;
+  justify-content: flex-end;
+  margin-top: 8px;
+}
+
+.budget-close-button {
+  min-height: 32px;
+}
+
+.closed-budget-list {
+  margin-top: 16px;
+  border-top: 1px solid #f0f1ee;
+  padding-top: 14px;
+  font-size: 11px;
+}
+
+.closed-budget-list > summary {
+  width: fit-content;
+  cursor: pointer;
+  color: var(--green);
+  font-weight: 600;
+}
+
+.closed-budget-items {
+  margin-top: 8px;
+}
+
+.closed-budget-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  border-top: 1px solid #f0f1ee;
+  padding: 10px 0;
+}
+
+.closed-budget-info {
+  display: grid;
+  gap: 4px;
+  min-width: 0;
+}
+
+.closed-budget-info span {
+  color: var(--muted);
+  font-size: 10px;
+}
+
+.closed-budget-row .text-link {
+  min-height: 40px;
+  padding: 0 8px;
+}
+
 .goal-card {
   border-top: 1px solid #f0f1ee;
   padding: 14px 0 2px;
@@ -899,6 +952,10 @@ a {
   .budget-submit .primary-button,
   .category-form .secondary-button {
     width: 100%;
+    min-height: 44px;
+  }
+
+  .budget-close-button {
     min-height: 44px;
   }
 

@@ -93,6 +93,33 @@ export type Database = {
         };
         Relationships: [];
       };
+      budget_category_status: {
+        Row: {
+          id: string;
+          user_id: string;
+          month: string;
+          category: string;
+          is_closed: boolean;
+          created_at: string;
+        };
+        Insert: {
+          id?: string;
+          user_id?: string;
+          month: string;
+          category: string;
+          is_closed?: boolean;
+          created_at?: string;
+        };
+        Update: {
+          id?: string;
+          user_id?: string;
+          month?: string;
+          category?: string;
+          is_closed?: boolean;
+          created_at?: string;
+        };
+        Relationships: [];
+      };
       savings_goals: {
         Row: {
           id: string;

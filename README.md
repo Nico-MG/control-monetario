@@ -32,7 +32,7 @@ Si no hay conexión, se muestra una página de reintento. Los movimientos, las s
 
 - Resumen mensual en pesos chilenos, ingresos, gastos y balance.
 - Registro de movimientos con fecha, categoría y comentarios.
-- Presupuestos por categoría con esquema fijo/variable; permite registrar varios montos por mes y categoría, con comentarios, que se suman al total.
+- Presupuestos por categoría con esquema fijo/variable; permite agregar montos con comentarios que se acumulan por mes y cerrar o reabrir categorías.
 - Plantilla optativa de categorías y montos del presupuesto del Excel.
 - Metas de ahorro con objetivo y progreso inicial.
 - Acceso autenticado y aislamiento de filas mediante Row Level Security.

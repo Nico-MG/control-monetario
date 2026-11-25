@@ -187,6 +187,83 @@ export async function createBudget(formData: FormData) {
   redirect(`/?month=${month}&notice=${encodeURIComponent("Monto agregado al presupuesto.")}`);
 }
 
+export async function closeBudgetCategory(formData: FormData) {
+  const category = field(formData, "category");
+  const month = field(formData, "month");
+
+  if (!category || !isMonth(month)) {
+    redirect(messageUrl("error", "Selecciona un mes y una categoría válidos."));
+  }
+
+  const supabase = await authenticatedClient();
+  await requireCategory(supabase, category);
+
+  const monthStart = `${month}-01`;
+  const [year, monthNumber] = month.split("-").map(Number);
+  const nextMonthStart = new Date(Date.UTC(year, monthNumber, 1)).toISOString().slice(0, 10);
+  const [budgets, expenses] = await Promise.all([
+    supabase
+      .from("budgets")
+      .select("amount")
+      .eq("month", monthStart)
+      .eq("category", category),
+    supabase
+      .from("transactions")
+      .select("amount")
+      .eq("category", category)
+      .eq("type", "expense")
+      .gte("date", monthStart)
+      .lt("date", nextMonthStart),
+  ]);
+
+  if (budgets.error || expenses.error) {
+    redirect(messageUrl("error", "No pudimos validar el presupuesto de la categoría."));
+  }
+
+  const budgetAmount = budgets.data.reduce((total, entry) => total + entry.amount, 0);
+  const spentAmount = expenses.data.reduce((total, entry) => total + entry.amount, 0);
+  if (budgetAmount <= 0 || spentAmount < budgetAmount) {
+    redirect(messageUrl("error", "Solo puedes cerrar una categoría cuando hayas completado su presupuesto."));
+  }
+
+  const { error } = await supabase.from("budget_category_status").upsert(
+    { month: monthStart, category, is_closed: true },
+    { onConflict: "user_id,month,category" },
+  );
+
+  if (error) {
+    redirect(messageUrl("error", "No pudimos cerrar la categoría."));
+  }
+
+  revalidatePath("/");
+  redirect(`/?month=${month}&notice=${encodeURIComponent("Categoría cerrada para este mes.")}`);
+}
+
+export async function reopenBudgetCategory(formData: FormData) {
+  const category = field(formData, "category");
+  const month = field(formData, "month");
+
+  if (!category || !isMonth(month)) {
+    redirect(messageUrl("error", "Selecciona un mes y una categoría válidos."));
+  }
+
+  const supabase = await authenticatedClient();
+  await requireCategory(supabase, category);
+
+  const { error } = await supabase
+    .from("budget_category_status")
+    .delete()
+    .eq("month", `${month}-01`)
+    .eq("category", category);
+
+  if (error) {
+    redirect(messageUrl("error", "No pudimos reabrir la categoría."));
+  }
+
+  revalidatePath("/");
+  redirect(`/?month=${month}&notice=${encodeURIComponent("Categoría reabierta.")}`);
+}
+
 export async function createExcelTemplateBudgets(formData: FormData) {
   const month = field(formData, "month");
   if (!isMonth(month)) {

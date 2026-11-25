@@ -12,11 +12,13 @@ import {
   Wallet,
 } from "lucide-react";
 import {
+  closeBudgetCategory,
   createBudget,
   createCategory,
   createExcelTemplateBudgets,
   createGoal,
   createTransaction,
+  reopenBudgetCategory,
   signOut,
   updateGoalProgress,
 } from "@/app/actions";
@@ -36,6 +38,7 @@ type DashboardProps = {
   transactions: Transaction[];
   recentTransactions: Transaction[];
   budgets: Budget[];
+  closedBudgetCategories: string[];
   goals: SavingsGoal[];
   categories: Category[];
 };
@@ -74,6 +77,7 @@ export function Dashboard({
   transactions,
   recentTransactions,
   budgets,
+  closedBudgetCategories,
   goals,
   categories,
 }: DashboardProps) {
@@ -99,6 +103,9 @@ export function Dashboard({
       ? entries[0].scheme
       : null,
   }));
+  const closedCategorySet = new Set(closedBudgetCategories);
+  const activeBudgetGroups = budgetGroups.filter((budget) => !closedCategorySet.has(budget.category));
+  const closedBudgetGroups = budgetGroups.filter((budget) => closedCategorySet.has(budget.category));
   const planned = budgetGroups.reduce((total, budget) => total + budget.amount, 0);
   const spentByCategory = new Map<string, number>();
   for (const transaction of transactions) {
@@ -187,12 +194,13 @@ export function Dashboard({
                   <p>Seguimiento de gastos para {formatMonth(month)}.</p>
                 </div>
               </div>
-              {budgetGroups.length > 0 ? (
+              {activeBudgetGroups.length > 0 ? (
                 <div className="budget-list">
-                  {budgetGroups.map((budget) => {
+                  {activeBudgetGroups.map((budget) => {
                     const spent = spentByCategory.get(budget.category) ?? 0;
                     const ratio = budget.amount > 0 ? spent / budget.amount : spent > 0 ? 1 : 0;
                     const width = Math.min(ratio * 100, 100);
+                    const isComplete = budget.amount > 0 && spent >= budget.amount;
                     return (
                       <div className="budget-category" key={budget.category}>
                         <div className="budget-row-head">
@@ -235,9 +243,22 @@ export function Dashboard({
                             ))}
                           </div>
                         </details>
+                        {isComplete && (
+                          <form action={closeBudgetCategory} className="budget-actions">
+                            <input name="category" type="hidden" value={budget.category} />
+                            <input name="month" type="hidden" value={month} />
+                            <button className="secondary-button budget-close-button" type="submit">
+                              Cerrar
+                            </button>
+                          </form>
+                        )}
                       </div>
                     );
                   })}
+                </div>
+              ) : budgetGroups.length > 0 ? (
+                <div className="empty-state">
+                  Todas las categorías de este mes están cerradas. Puedes reabrir alguna desde la lista de abajo.
                 </div>
               ) : (
                 <div className="empty-state">
@@ -248,6 +269,29 @@ export function Dashboard({
                     <button className="secondary-button" type="submit"><Plus /> Usar plantilla del Excel</button>
                   </form>
                 </div>
+              )}
+              {closedBudgetGroups.length > 0 && (
+                <details className="closed-budget-list">
+                  <summary>Cerradas ({closedBudgetGroups.length})</summary>
+                  <div className="closed-budget-items">
+                    {closedBudgetGroups.map((budget) => {
+                      const spent = spentByCategory.get(budget.category) ?? 0;
+                      return (
+                        <div className="closed-budget-row" key={budget.category}>
+                          <div className="closed-budget-info">
+                            <strong>{budget.category}</strong>
+                            <span>{currency.format(spent)} / {currency.format(budget.amount)}</span>
+                          </div>
+                          <form action={reopenBudgetCategory}>
+                            <input name="category" type="hidden" value={budget.category} />
+                            <input name="month" type="hidden" value={month} />
+                            <button className="text-link" type="submit">Reabrir</button>
+                          </form>
+                        </div>
+                      );
+                    })}
+                  </div>
+                </details>
               )}
               <form action={createBudget} className="form-grid budget-form" style={{ marginTop: 20 }}>
                 <div className="field">

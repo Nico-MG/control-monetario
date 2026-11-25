@@ -56,7 +56,14 @@ async function HomeContent({ searchParams }: HomeProps) {
   const [year, monthNumber] = month.split("-").map(Number);
   const nextMonthStart = new Date(Date.UTC(year, monthNumber, 1)).toISOString().slice(0, 10);
 
-  const [monthlyTransactions, recentTransactions, budgets, goals, categories] = await Promise.all([
+  const [
+    monthlyTransactions,
+    recentTransactions,
+    budgets,
+    budgetStatuses,
+    goals,
+    categories,
+  ] = await Promise.all([
     supabase
       .from("transactions")
       .select("*")
@@ -74,6 +81,10 @@ async function HomeContent({ searchParams }: HomeProps) {
       .eq("month", `${month}-01`)
       .order("category")
       .order("created_at", { ascending: true }),
+    supabase
+      .from("budget_category_status")
+      .select("category, is_closed")
+      .eq("month", `${month}-01`),
     supabase.from("savings_goals").select("*").order("created_at", { ascending: false }),
     supabase.from("categories").select("*").order("name"),
   ]);
@@ -82,6 +93,7 @@ async function HomeContent({ searchParams }: HomeProps) {
     monthlyTransactions.error?.message ??
     recentTransactions.error?.message ??
     budgets.error?.message ??
+    budgetStatuses.error?.message ??
     goals.error?.message ??
     categories.error?.message;
 
@@ -109,6 +121,9 @@ async function HomeContent({ searchParams }: HomeProps) {
       transactions={monthlyTransactions.data ?? []}
       recentTransactions={recentTransactions.data ?? []}
       budgets={budgets.data ?? []}
+      closedBudgetCategories={
+        budgetStatuses.data?.filter(({ is_closed }) => is_closed).map(({ category }) => category) ?? []
+      }
       goals={goals.data ?? []}
       categories={categories.data ?? []}
     />
